@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Genius Tutor JAMB CBT: UTME practice</title>
-    <link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#071B55">
     <link rel="preload" as="image" href="hero.jpg" fetchpriority="high">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -31,6 +29,9 @@
     <div id="app" class="flex-1 flex flex-col"></div>
 
     <script src="questions.js"></script>
+    <script src="biology.js"></script>
+    <script src="chemistry.js"></script>
+    <script src="physics.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
         import {
@@ -39,7 +40,7 @@
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
         import {
             getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, getDocs, collection,
-            query, orderBy, limit, where, serverTimestamp
+            query, orderBy, limit, where, serverTimestamp, getCountFromServer
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -84,6 +85,10 @@
             government: generateSubjectBank("Government", 125),
             literature: generateSubjectBank("Literature in English", 125)
         };
+
+        // Real question banks loaded from separate files.
+        // Rows look like: [question, CORRECT answer, wrong1, wrong2, wrong3]
+        const REAL_BANKS = { biology: window.BIOLOGY, chemistry: window.CHEMISTRY, physics: window.PHYSICS };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
         function shuffleArr(a) {
@@ -137,7 +142,11 @@
             saveError: false,
             history: null,
             practiceHistory: [],
-            psetup: { subject: 'english', count: 10 },
+            psetup: { subjects: [], count: 10 },
+            esetup: { subjects: [] },
+            examSubjects: [],
+            pickMsg: '',
+            leaderboard: null,
             practice: null,
             review: null,
             adminData: { users: [], sessions: [] },
@@ -148,6 +157,10 @@
         const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
         function getRandomQuestions(key, count) {
+            const rows = REAL_BANKS[key];
+            if (rows && rows.length) {
+                return shuffleArr(rows).slice(0, count).map(r => toItem(r));
+            }
             const all = [...questionBank[key]];
             for (let i = all.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
@@ -180,8 +193,10 @@
                 if (state.currentView === 'loading') { state.currentView = 'home'; render(); }
                 return;
             }
+            if (awayTooLong()) { await forceLogout(AWAY_NOTICE); return; }
             try {
                 await loadProfile(fbUser);
+                touchActive();
                 if (['loading', 'login', 'register'].includes(state.currentView)) {
                     showDashboard();
                 }
@@ -205,10 +220,11 @@
             const app = document.getElementById('app');
             const views = {
                 loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister,
-                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
+                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
             };
             app.innerHTML = (views[state.currentView] || renderLoading)();
             if (state.currentView === 'exam') updateTimerDisplay();
+            if (state.currentView === 'practice') updatePracticeTimer();
         }
 
         function setView(v, notice = '') { state.currentView = v; state.notice = notice; render(); }
@@ -304,6 +320,18 @@
                         </div>
                     </section>
 
+                    <section class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-10">
+                        <div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 sm:p-6">
+                            <h2 class="font-display font-bold text-lg">Need help? Found an error?</h2>
+                            <p class="text-sm text-[#0b3d2b]/70 mt-1 leading-relaxed">If something does not work, or you see a wrong question or answer, please contact me and I will help you as soon as I can.</p>
+                            <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2.5 mt-4">
+                                <a href="https://wa.me/qr/FU7ZUHWPZWQJD1" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">💬 Chat on WhatsApp</a>
+                                <a href="tel:+2349122866764" class="inline-flex items-center justify-center gap-2 border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-5 py-3 transition">📞 +234 912 286 6764</a>
+                                <a href="mailto:babajidehabeeb7@gmail.com" class="inline-flex items-center justify-center gap-2 border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-5 py-3 transition break-all">✉️ babajidehabeeb7@gmail.com</a>
+                            </div>
+                        </div>
+                    </section>
+
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
                         <span>© 2026 Genius Tutor JAMB CBT. Practice platform for UTME preparation.</span>
                         <span>Not affiliated with JAMB.</span>
@@ -367,6 +395,7 @@
             const password = document.getElementById('loginPassword').value;
             const btn = document.getElementById('login-btn');
             showLoginError('');
+            touchActive();
             btn.disabled = true; btn.textContent = 'Signing in…';
             try {
                 const cred = await signInWithEmailAndPassword(auth, email, password);
@@ -398,41 +427,63 @@
             return ['chemistry','physics','biology','mathematics','economics','government','literature']
                 .map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('');
         }
-        const selectCls = "w-full mt-0.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200";
-        const inputCls = "w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 text-sm";
+        const selectCls = "w-full mt-0.5 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]";
+        const inputCls = "w-full bg-white border border-[#d9d4c3] rounded-lg px-3 py-2.5 text-sm text-[#0b3d2b] placeholder-[#9bb0a5] focus:outline-none focus:border-[#0b5a3c] focus:ring-1 focus:ring-[#0b5a3c]";
 
         function renderRegister() {
             return `
-                <div class="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
-                    <div class="max-w-md w-full bg-slate-900/80 backdrop-blur border border-indigo-500/30 rounded-2xl p-8 shadow-2xl shadow-indigo-950/50">
-                        <div class="text-center mb-6">
-                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">Account Creation</span>
-                            <h1 class="text-2xl font-bold mt-3 text-white">Register for Genius Tutor</h1>
-                            <p class="text-slate-400 text-xs mt-1">A verification link will be emailed to you</p>
-                        </div>
-                        <form onsubmit="handleRegister(event)" class="space-y-4">
-                            <input type="text" id="regFullName" required placeholder="Full name" class="${inputCls}">
-                            <input type="text" id="regNumberInput" required placeholder="JAMB registration number" class="${inputCls}">
-                            <input type="email" id="regEmailInput" required placeholder="Email address" autocomplete="email" class="${inputCls}">
-                            <input type="password" id="regPassword" required minlength="6" placeholder="Password (min 6 characters)" autocomplete="new-password" class="${inputCls}">
-                            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
-                                <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider">Subject Combination</label>
-                                <div>
-                                    <span class="text-[10px] text-slate-400">1. Use of English (compulsory, 60 Qs)</span>
-                                    <input type="text" disabled value="Use of English" class="w-full mt-0.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
-                                </div>
-                                <div><span class="text-[10px] text-slate-400">2. Second subject</span><select id="regSub2" class="${selectCls}">${subjectOptions('chemistry')}</select></div>
-                                <div><span class="text-[10px] text-slate-400">3. Third subject</span><select id="regSub3" class="${selectCls}">${subjectOptions('physics')}</select></div>
-                                <div><span class="text-[10px] text-slate-400">4. Fourth subject</span><select id="regSub4" class="${selectCls}">${subjectOptions('biology')}</select></div>
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="bg-gradient-to-b from-[#0b6b45] to-[#00170f] px-4 sm:px-8 py-3">
+                        <button onclick="setView('home')" class="flex items-center gap-2.5 text-left">
+                            <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
+                            <div class="leading-tight text-white">
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
                             </div>
-                            <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition text-sm">
-                                Create Account 📧
-                            </button>
-                        </form>
-                        <div class="mt-4 text-center">
-                            <button onclick="setView('login')" class="text-xs text-slate-400 hover:text-slate-200">← Back to Sign In</button>
+                        </button>
+                    </header>
+
+                    <main class="flex-1 px-4 pt-8 sm:pt-12 pb-10">
+                        <div class="max-w-sm sm:max-w-md mx-auto bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-sm">
+                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR JAMB CBT</p>
+                            <h1 class="font-display font-bold text-xl mt-1">Create your account</h1>
+                            <p class="text-xs text-[#0b3d2b]/60 mt-1">A verification link will be emailed to you.</p>
+
+                            <form onsubmit="handleRegister(event)" class="mt-5 space-y-4">
+                                <div>
+                                    <label for="regFullName" class="block text-xs font-medium mb-1.5">Full name</label>
+                                    <input type="text" id="regFullName" required autocomplete="name" class="${inputCls}">
+                                </div>
+                                <div>
+                                    <label for="regNumberInput" class="block text-xs font-medium mb-1.5">JAMB registration number</label>
+                                    <input type="text" id="regNumberInput" required class="${inputCls}">
+                                </div>
+                                <div>
+                                    <label for="regEmailInput" class="block text-xs font-medium mb-1.5">Email address</label>
+                                    <input type="email" id="regEmailInput" required autocomplete="email" class="${inputCls}">
+                                </div>
+                                <div>
+                                    <label for="regPassword" class="block text-xs font-medium mb-1.5">Password</label>
+                                    <input type="password" id="regPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls}">
+                                </div>
+                                <div class="bg-[#faf8f2] p-3 rounded-xl border border-[#e8e2d2] space-y-2.5">
+                                    <p class="text-xs font-semibold text-[#0b5a3c] uppercase tracking-wider">Subject combination</p>
+                                    <p class="text-[11px] text-[#0b3d2b]/60 leading-relaxed">These are your default picks. You can change them before every exam or practice.</p>
+                                    <div>
+                                        <span class="text-[11px] text-[#0b3d2b]/60">1. Use of English (compulsory)</span>
+                                        <input type="text" disabled value="Use of English" class="w-full mt-0.5 bg-[#eef1ec] border border-[#e8e2d2] rounded-lg px-3 py-2 text-sm text-[#0b3d2b]/70">
+                                    </div>
+                                    <div><span class="text-[11px] text-[#0b3d2b]/60">2. Second subject</span><select id="regSub2" class="${selectCls}">${subjectOptions('chemistry')}</select></div>
+                                    <div><span class="text-[11px] text-[#0b3d2b]/60">3. Third subject</span><select id="regSub3" class="${selectCls}">${subjectOptions('physics')}</select></div>
+                                    <div><span class="text-[11px] text-[#0b3d2b]/60">4. Fourth subject</span><select id="regSub4" class="${selectCls}">${subjectOptions('biology')}</select></div>
+                                </div>
+                                <button type="submit" id="submit-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Create Account 📧</button>
+                            </form>
+
+                            <p class="text-center text-xs text-[#0b3d2b]/70 mt-5">Already registered? <button onclick="setView('login')" class="font-semibold text-[#0b5a3c] hover:underline">Sign in</button></p>
+                            <p class="text-center mt-3"><button onclick="setView('home')" class="text-[11px] text-[#0b3d2b]/50 hover:text-[#0b3d2b]">← Back to home</button></p>
                         </div>
-                    </div>
+                    </main>
                 </div>`;
         }
 
@@ -473,9 +524,124 @@
             return m[sub] || (sub.charAt(0).toUpperCase() + sub.slice(1));
         }
 
-        function practiceSubject(sub) {
-            state.psetup.subject = sub;
-            setView('practiceSetup');
+        const OTHER_SUBJECTS = ['chemistry', 'physics', 'biology', 'mathematics', 'economics', 'government', 'literature'];
+        const PRACTICE_SECS_PER_Q = 40;   // same pace as the real exam: 180 questions in 120 minutes
+        let practiceInterval = null;
+
+        function hasRealQuestions(sub) {
+            if (sub === 'english') return !!window.ENGLISH;
+            return !!(REAL_BANKS[sub] && REAL_BANKS[sub].length);
+        }
+
+        function defaultPicks() {
+            const reg = ((state.user && state.user.subjects) || []).filter(s => OTHER_SUBJECTS.includes(s));
+            const out = [...new Set(reg)].slice(0, 3);
+            for (const s of OTHER_SUBJECTS) { if (out.length >= 3) break; if (!out.includes(s)) out.push(s); }
+            return out;
+        }
+
+        function pickList(kind) { return kind === 'exam' ? state.esetup.subjects : state.psetup.subjects; }
+
+        function togglePick(kind, sub) {
+            const list = pickList(kind);
+            const i = list.indexOf(sub);
+            state.pickMsg = '';
+            if (i >= 0) list.splice(i, 1);
+            else if (list.length >= 3) state.pickMsg = 'Only 3 subjects besides English. Tap a chosen one to remove it first.';
+            else list.push(sub);
+            render();
+        }
+
+        function renderSubjectPicker(kind) {
+            const picks = pickList(kind);
+            const btn = sub => {
+                const on = picks.includes(sub);
+                return `<button onclick="togglePick('${kind}','${sub}')" class="text-left p-3 rounded-xl border text-sm font-semibold transition ${on ? 'bg-[#e1f3e8] border-[#066c43] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
+                    <span class="flex items-center justify-between gap-2">
+                        <span>${esc(subjLabel(sub))}</span>
+                        <span class="w-5 h-5 shrink-0 rounded-full border flex items-center justify-center text-[11px] ${on ? 'bg-[#066c43] border-[#066c43] text-white' : 'border-[#c9c3ad] text-transparent'}">✓</span>
+                    </span>
+                    ${hasRealQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
+                </button>`;
+            };
+            return `
+                <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Subjects: English + 3 of your choice</p>
+                <div class="p-3 rounded-xl border border-[#bfe0cd] bg-[#e1f3e8] text-sm font-semibold flex items-center justify-between">
+                    <span>Use of English</span><span class="text-[11px] font-semibold text-[#0b5a3c]">🔒 Compulsory</span>
+                </div>
+                <div class="grid grid-cols-2 gap-2 mt-2">${OTHER_SUBJECTS.map(btn).join('')}</div>
+                <p class="text-xs mt-2 ${picks.length === 3 ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${picks.length} of 3 chosen${state.pickMsg ? ' · ' + esc(state.pickMsg) : ''}</p>`;
+        }
+
+        // --- EXAM SETUP (choose subjects) ---
+        function openExamSetup() {
+            if (state.esetup.subjects.length !== 3) state.esetup.subjects = defaultPicks();
+            state.pickMsg = '';
+            setView('examSetup');
+            window.scrollTo(0, 0);
+        }
+
+        function renderExamSetup() {
+            const picks = state.esetup.subjects;
+            const ready = picks.length === 3;
+            const sample = picks.some(s => !hasRealQuestions(s));
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2] text-[#0b3d2b]">
+                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
+                        <span class="bg-[#e1f3e8] text-[#0b5a3c] text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-[#bfe0cd]">Full CBT exam</span>
+                        <h2 class="text-2xl font-bold mt-3">Choose your subjects</h2>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">${englishExamSize() + 120} questions · 2 hours. The clock starts as soon as you begin.</p>
+                        ${renderSubjectPicker('exam')}
+                        ${sample ? `<p class="text-xs text-[#8a6500] bg-[#f6ecc9] border border-[#ecdca4] rounded-lg p-3 mt-4 leading-relaxed">Subjects marked “Sample questions” do not have their real question bank yet.</p>` : ''}
+                        <div class="flex gap-3 mt-8">
+                            <button onclick="showDashboard()" class="flex-1 bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546] font-semibold py-3 rounded-xl transition">← Back</button>
+                            <button onclick="startExamSession()" ${ready ? '' : 'disabled'} class="flex-[2] bg-[#066c43] hover:bg-[#055a37] text-white font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed">Begin exam 🚀</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        // --- LEADERBOARD CARD (dashboard) ---
+        function leaderboardCard() {
+            const lb = state.leaderboard;
+            const u = state.user;
+            let body;
+            if (lb === null) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">Loading leaderboard…</p>`;
+            else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the leaderboard rule in your Firestore rules.' : 'The leaderboard is not available right now. Please try again later.'}</p>`;
+            else if (!lb.rows.length) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">No scores yet. Finish a full exam to be the first on the board.</p>`;
+            else {
+                let prevRank = 0;
+                body = lb.rows.map((r, i) => {
+                    const rank = i > 0 && r.bestScore === lb.rows[i - 1].bestScore ? prevRank : i + 1;
+                    prevRank = rank;
+                    const me = r.id === u.uid;
+                    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank;
+                    return `<div class="flex items-center gap-3 px-4 sm:px-5 py-3 ${i ? 'border-t border-[#efe9d9]' : ''} ${me ? 'bg-[#e1f3e8]' : ''}">
+                        <span class="w-8 text-center font-display font-bold ${rank <= 3 ? 'text-xl' : 'text-sm text-[#0b3d2b]/60'}">${medal}</span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-semibold truncate">${esc(r.name || 'Student')}${me ? ' <span class="text-[11px] font-semibold text-[#0b5a3c]">(you)</span>' : ''}</p>
+                            <p class="text-[11px] text-[#0b3d2b]/55">${esc(r.exams || 1)} full ${r.exams === 1 ? 'exam' : 'exams'}</p>
+                        </div>
+                        <p class="font-display font-bold text-lg text-[#066c43] shrink-0">${esc(r.bestScore)}<span class="text-xs font-medium text-[#0b3d2b]/50"> / 400</span></p>
+                    </div>`;
+                }).join('');
+            }
+            let footer = '';
+            if (lb && !lb.error) {
+                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400 · Position #${lb.myRank ?? '–'}`;
+            }
+            return `
+                <div class="flex items-center justify-between mt-10 mb-3">
+                    <div>
+                        <h2 class="font-display font-bold text-xl">🏆 Leaderboard</h2>
+                        <p class="text-xs text-[#0b3d2b]/55">Top 10 · best full-exam score out of 400</p>
+                    </div>
+                    <button onclick="refreshLeaderboard()" class="text-xs font-semibold text-[#0b5a3c] hover:underline">↻ Refresh</button>
+                </div>
+                <div class="bg-white border border-[#e8e2d2] rounded-2xl overflow-hidden">
+                    ${body}
+                    ${footer ? `<p class="px-5 py-3 text-xs font-semibold text-[#0b5a3c] bg-[#f4faf6] border-t border-[#efe9d9]">${footer}</p>` : ''}
+                </div>`;
         }
 
         function renderDashboard() {
@@ -536,12 +702,12 @@
                         const raw = x.rawScore !== undefined ? x.rawScore : null;
                         const tot = x.totalQuestions || null;
                         const pct = raw !== null && tot ? Math.round(raw / tot * 100) : (x.scaledScore !== undefined ? Math.round(x.scaledScore / 4) : 0);
-                        const title = x.kind === 'exam' ? 'Full CBT exam' : 'Practice · ' + subjLabel((x.subjects && x.subjects[0]) || x.subject || '');
+                        const title = x.kind === 'exam' ? 'Full CBT exam' : 'Practice · ' + (x.subjects && x.subjects.length ? x.subjects.map(z => subjLabel(z)).join(', ') : subjLabel(x.subject || ''));
                         return `<div class="flex items-center justify-between gap-3 px-5 py-3.5 ${i ? 'border-t border-[#efe9d9]' : ''}">
                             <div class="min-w-0">
                                 <p class="text-sm font-semibold truncate">${esc(title)}</p>
                                 <p class="text-xs text-[#0b3d2b]/55">${esc(fmtTime(x.startedAt))}</p>
-                                ${x.kind === 'exam' ? `<button onclick="reviewPast('${x.id}')" class="text-xs font-semibold text-[#0b5a3c] hover:underline mt-1">Review answers →</button>` : ''}
+                                ${(x.kind === 'exam' || x.hasReview) ? `<button onclick="reviewPast('${x.id}')" class="text-xs font-semibold text-[#0b5a3c] hover:underline mt-1">Review answers →</button>` : ''}
                             </div>
                             <div class="text-right shrink-0">
                                 <p class="font-display font-bold text-lg text-[#066c43]">${pct}%</p>
@@ -551,18 +717,7 @@
                     }).join('')}
                 </div>`;
 
-            // ----- practice subject cards -----
-            const subjectCards = u.subjects.map(sub => {
-                const meta = sub === 'english' ? availableFor('english') + ' questions' : 'Sample questions';
-                return `<button onclick="practiceSubject('${sub}')" class="${card} p-4 text-left hover:border-[#0b5a3c] transition">
-                    <p class="text-[10px] font-semibold tracking-wider text-[#0b5a3c] uppercase">Practice</p>
-                    <p class="font-display font-bold mt-0.5">${esc(subjLabel(sub))}</p>
-                    <div class="flex items-center justify-between mt-3 text-xs text-[#0b3d2b]/55">
-                        <span>${meta} · no time limit</span>
-                        <span class="w-6 h-6 rounded-full border border-[#0b5a3c] text-[#0b5a3c] flex items-center justify-center text-[9px]">▶</span>
-                    </div>
-                </button>`;
-            }).join('');
+            const leaderboardHtml = leaderboardCard();
 
             return `
                 <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
@@ -585,7 +740,7 @@
 
                     <main class="flex-1 max-w-5xl xl:max-w-6xl mx-auto w-full px-4 py-6">
                         <h1 class="font-display font-extrabold text-3xl">Hello, ${esc(hello)} 👋</h1>
-                        <p class="text-sm text-[#0b3d2b]/65 mt-1">Sit a full exam, or practise one subject at your own pace.</p>
+                        <p class="text-sm text-[#0b3d2b]/65 mt-1">Sit a full exam, or practise at exam pace.</p>
                         ${state.isAdmin && !window.ENGLISH ? `<div class="mt-4 text-sm bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 leading-relaxed">⚠️ Admin notice: <strong>questions.js</strong> was not found, so English is showing placeholder questions. Upload questions.js to your GitHub repository next to index.html.</div>` : ''}
 
                         <div class="grid md:grid-cols-2 gap-4 mt-6">
@@ -594,20 +749,19 @@
                                 <h2 class="font-display font-bold text-2xl mt-3">Sit the full exam</h2>
                                 <p class="text-sm text-white/75 mt-1.5 leading-relaxed">All 4 subjects · ${totalQs} questions · 2 hours. The clock is kept by the server and your paper submits automatically when time is up.</p>
                                 <div class="flex flex-wrap gap-1.5 mt-4">
-                                    ${u.subjects.map(sub => `<span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">${esc(subjLabel(sub))}</span>`).join('')}
+                                    <span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">Use of English</span><span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">+ 3 subjects you choose</span>
                                 </div>
-                                <button onclick="startExamSession()" class="mt-5 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>
+                                <button onclick="openExamSetup()" class="mt-5 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>
                             </div>
                             <div class="${card} p-6 flex flex-col">
                                 <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">PRACTICE MODE</span>
                                 <h2 class="font-display font-bold text-2xl mt-3">Practise at your own pace</h2>
-                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick one subject and 10, 20 or 40 questions. No time limit, and you see the correct answer after every question.</p>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick English plus 3 subjects and 5 to 40 questions each. Timed at exam pace, with the correct answer shown after every question and a full review at the end.</p>
                                 <button onclick="openPractice()" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">✏️ Start practice</button>
                             </div>
                         </div>
 
-                        <h2 class="font-display font-bold text-xl mt-10 mb-3">Practise a subject</h2>
-                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">${subjectCards}</div>
+                        ${leaderboardHtml}
 
                         <h2 class="font-display font-bold text-xl mt-10 mb-3">Your progress</h2>
                         ${statsHtml}
@@ -624,18 +778,17 @@
 
         async function handleLogout() {
             await signOut(auth);
-            state.user = null; state.isAdmin = false; state.history = null;
+            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null;
             setView('home');
         }
 
         async function startExamSession() {
             const u = state.user;
-            state.examData = {
-                english: buildEnglishExam(),
-                [u.subjects[1]]: getRandomQuestions(u.subjects[1], 40),
-                [u.subjects[2]]: getRandomQuestions(u.subjects[2], 40),
-                [u.subjects[3]]: getRandomQuestions(u.subjects[3], 40)
-            };
+            const picks = state.esetup.subjects;
+            if (picks.length !== 3) return;
+            state.examSubjects = ['english', ...picks];
+            state.examData = { english: buildEnglishExam() };
+            picks.forEach(sub => { state.examData[sub] = getRandomQuestions(sub, 40); });
             state.activeSubject = 'english';
             state.currentIndex = 0;
             state.answers = {};
@@ -650,7 +803,7 @@
             try {
                 const ref = await addDoc(collection(db, 'sessions'), {
                     uid: u.uid, name: u.name, regNumber: u.regNumber,
-                    subjects: u.subjects, status: 'In progress',
+                    subjects: state.examSubjects, status: 'In progress',
                     startedAt: serverTimestamp()
                 });
                 state.sessionId = ref.id;
@@ -702,7 +855,7 @@
             const isFlagged = state.flagged[ansKey];
 
             let totalAnswered = 0, totalCount = 0;
-            state.user.subjects.forEach(sub => {
+            state.examSubjects.forEach(sub => {
                 const len = state.examData[sub].length;
                 totalCount += len;
                 for (let i = 0; i < len; i++) if (state.answers[`${sub}-${i}`] !== undefined) totalAnswered++;
@@ -726,7 +879,7 @@
                     </header>
 
                     <div class="bg-[#faf8f2] border-b border-[#e8e2d2] px-4 sm:px-6 py-2.5 flex gap-2 overflow-x-auto">
-                        ${state.user.subjects.map(sub => `
+                        ${state.examSubjects.map(sub => `
                             <button onclick="switchSubject('${sub}')" class="px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${state.activeSubject === sub ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-white text-[#58796b] hover:text-[#0b3d2b] border border-[#e8e2d2]'}">
                                 ${esc(sub)} (${state.examData[sub].length} Qs)
                             </button>`).join('')}
@@ -793,7 +946,7 @@
         function computeResult() {
             let totalScore = 0, totalCount = 0;
             const breakdown = {};
-            state.user.subjects.forEach(sub => {
+            state.examSubjects.forEach(sub => {
                 let sc = 0;
                 state.examData[sub].forEach((q, idx) => { if (state.answers[`${sub}-${idx}`] === q.answer) sc++; });
                 breakdown[sub] = { score: sc, total: state.examData[sub].length };
@@ -805,7 +958,7 @@
 
         function buildReviewItems() {
             const items = [];
-            state.user.subjects.forEach(sub => {
+            state.examSubjects.forEach(sub => {
                 state.examData[sub].forEach((q, idx) => {
                     const c = state.answers[`${sub}-${idx}`];
                     items.push({ s: sub, q: q.question, o: q.options, a: q.answer, c: c === undefined ? -1 : c, p: q.passage || null });
@@ -897,9 +1050,57 @@
             setView('dashboard');
             if (!state.user) return;
             if (state.history === null) {
+                state.leaderboard = null;
                 await loadHistory();
                 if (state.currentView === 'dashboard') render();
+                await loadLeaderboard();
+                if (state.currentView === 'dashboard') render();
             }
+        }
+
+        function publicName(n) {
+            const parts = String(n || '').trim().split(/\s+/).filter(Boolean);
+            if (!parts.length) return 'Student';
+            const cap = w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+            return parts.length > 1 ? cap(parts[0]) + ' ' + parts[parts.length - 1].charAt(0).toUpperCase() + '.' : cap(parts[0]);
+        }
+
+        async function loadLeaderboard() {
+            try {
+                const top = () => getDocs(query(collection(db, 'leaderboard'), orderBy('bestScore', 'desc'), limit(10)));
+                let snap = await top();
+                const h = state.history || [];
+                const myBest = h.length ? Math.max(...h.map(x => x.scaledScore)) : null;
+                if (myBest !== null) {
+                    // keep my own leaderboard entry up to date (also adds exams taken before the leaderboard existed)
+                    const meRef = doc(db, 'leaderboard', state.user.uid);
+                    const meSnap = await getDoc(meRef);
+                    const cur = meSnap.exists() ? meSnap.data() : null;
+                    if (!cur || cur.bestScore !== myBest || cur.exams !== h.length) {
+                        await setDoc(meRef, { uid: state.user.uid, name: publicName(state.user.name), bestScore: myBest, exams: h.length, updatedAt: serverTimestamp() });
+                        snap = await top();
+                    }
+                }
+                const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                let myRank = null;
+                if (myBest !== null) {
+                    try {
+                        const c = await getCountFromServer(query(collection(db, 'leaderboard'), where('bestScore', '>', myBest)));
+                        myRank = c.data().count + 1;
+                    } catch (_) {}
+                }
+                state.leaderboard = { rows, myBest, myRank };
+            } catch (err) {
+                console.error('Could not load leaderboard', err);
+                state.leaderboard = { error: err.code || 'error', rows: [] };
+            }
+        }
+
+        async function refreshLeaderboard() {
+            state.leaderboard = null;
+            render();
+            await loadLeaderboard();
+            if (state.currentView === 'dashboard') render();
         }
 
         async function loadHistory() {
@@ -997,6 +1198,7 @@
                 const E = window.ENGLISH;
                 return (E.general || []).length + (E.novel || []).length + Object.keys(E.passages || {}).length * 5;
             }
+            if (REAL_BANKS[sub] && REAL_BANKS[sub].length) return REAL_BANKS[sub].length;
             return 125;
         }
 
@@ -1014,50 +1216,101 @@
             return [...out, ...gen];
         }
 
-        function openPractice() {
-            if (!state.user.subjects.includes(state.psetup.subject)) state.psetup.subject = state.user.subjects[0];
-            setView('practiceSetup');
+        function formatClock(sec) {
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            return (h ? [h, m, s] : [m, s]).map(n => String(n).padStart(2, '0')).join(':');
         }
-        function setPSubject(sub) { state.psetup.subject = sub; render(); }
+
+        function updatePracticeTimer() {
+            const el = document.getElementById('practice-timer');
+            if (!el || !state.practice) return;
+            el.textContent = formatClock(state.practice.timeLeft);
+            if (state.practice.timeLeft < 60) el.classList.add('text-rose-600', 'animate-pulse');
+        }
+
+        function startPracticeTimer() {
+            if (practiceInterval) clearInterval(practiceInterval);
+            const P = state.practice;
+            const tick = () => {
+                if (state.practice !== P || state.currentView !== 'practice') { clearInterval(practiceInterval); practiceInterval = null; return; }
+                P.timeLeft = Math.max(0, Math.round((P.deadline - Date.now()) / 1000));
+                updatePracticeTimer();
+                if (P.timeLeft <= 0) {
+                    clearInterval(practiceInterval); practiceInterval = null;
+                    P.timedOut = true;
+                    alert('Time is up! Finishing your practice now.');
+                    finishPractice();
+                }
+            };
+            practiceInterval = setInterval(tick, 1000);
+            tick();
+        }
+
+        function openPractice() {
+            if (state.psetup.subjects.length !== 3) state.psetup.subjects = defaultPicks();
+            state.pickMsg = '';
+            setView('practiceSetup');
+            window.scrollTo(0, 0);
+        }
         function setPCount(n) { state.psetup.count = n; render(); }
+
+        function practicePlan() {
+            const subs = ['english', ...state.psetup.subjects];
+            const n = state.psetup.count;
+            const total = subs.reduce((a, sub) => a + Math.min(n, availableFor(sub)), 0);
+            return { subs, total, secs: total * PRACTICE_SECS_PER_Q };
+        }
 
         function renderPracticeSetup() {
             const ps = state.psetup;
-            const avail = availableFor(ps.subject);
+            const ready = ps.subjects.length === 3;
+            const plan = practicePlan();
+            const short = plan.subs.filter(sub => availableFor(sub) < ps.count);
+            const sample = plan.subs.some(sub => !hasRealQuestions(sub));
             const pill = (active) => `px-4 py-3 rounded-xl text-sm font-semibold border transition ${active ? 'bg-indigo-600 text-white border-[#0b5a3c]' : 'bg-[#faf8f2] text-[#2f5546] border-[#e8e2d2] hover:border-[#0b5a3c]'}`;
             return `
-                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2]">
-                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-8 shadow-xl">
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2] text-[#0b3d2b]">
+                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
                         <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">Practice mode</span>
-                        <h2 class="text-2xl font-bold text-[#0b3d2b] mt-3">Practise at your own pace</h2>
-                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">No time limit. You see the correct answer after every question. Practice results are kept separate from your full exams.</p>
+                        <h2 class="text-2xl font-bold mt-3">Practise at exam pace</h2>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed, and you see the correct answer after every question. Practice results are kept separate from your full exams.</p>
 
-                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Choose a subject</p>
-                        <div class="grid grid-cols-2 gap-2">
-                            ${state.user.subjects.map(sub => `<button onclick="setPSubject('${sub}')" class="${pill(ps.subject === sub)} uppercase">${esc(sub)}</button>`).join('')}
-                        </div>
+                        ${renderSubjectPicker('practice')}
 
-                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">How many questions?</p>
-                        <div class="grid grid-cols-3 gap-2">
-                            ${[10, 20, 40].map(n => `<button onclick="setPCount(${n})" class="${pill(ps.count === n)}">${n}</button>`).join('')}
+                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Questions per subject</p>
+                        <div class="grid grid-cols-4 gap-2">
+                            ${[5, 10, 20, 40].map(n => `<button onclick="setPCount(${n})" class="${pill(ps.count === n)}">${n}</button>`).join('')}
                         </div>
-                        ${avail < ps.count ? `<p class="text-xs text-amber-800 mt-3">Only ${avail} ${esc(ps.subject)} questions are available right now, so you will get ${avail}.</p>` : ''}
+                        ${short.map(sub => `<p class="text-xs text-amber-800 mt-2">Only ${availableFor(sub)} ${esc(subjLabel(sub))} questions are available right now.</p>`).join('')}
+                        ${sample ? `<p class="text-xs text-[#8a6500] bg-[#f6ecc9] border border-[#ecdca4] rounded-lg p-3 mt-3 leading-relaxed">Subjects marked “Sample questions” do not have their real question bank yet.</p>` : ''}
+
+                        <div class="mt-5 text-sm bg-[#faf8f2] border border-[#e8e2d2] rounded-xl p-3 leading-relaxed">
+                            ⏱️ <strong>${plan.total} questions</strong> · about <strong>${Math.max(1, Math.round(plan.secs / 60))} minutes</strong> (${PRACTICE_SECS_PER_Q} seconds per question, the same pace as the real exam).
+                        </div>
 
                         <div class="flex gap-3 mt-8">
                             <button onclick="showDashboard()" class="flex-1 bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546] font-semibold py-3 rounded-xl transition">← Back</button>
-                            <button onclick="startPractice()" class="flex-[2] bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Start practice</button>
+                            <button onclick="startPractice()" ${ready ? '' : 'disabled'} class="flex-[2] bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed">Start practice</button>
                         </div>
                     </div>
                 </div>`;
         }
 
         function startPractice() {
-            const { subject, count } = state.psetup;
-            const items = subject === 'english' ? buildPracticeEnglish(count) : getRandomQuestions(subject, count);
-            if (!items.length) { alert('No questions are available for this subject yet.'); return; }
-            state.practice = { subject, items, index: 0, answers: {} };
+            const ps = state.psetup;
+            if (ps.subjects.length !== 3) return;
+            const subs = ['english', ...ps.subjects];
+            const items = [];
+            subs.forEach(sub => {
+                const part = sub === 'english' ? buildPracticeEnglish(ps.count) : getRandomQuestions(sub, ps.count);
+                part.forEach(q => items.push({ ...q, subject: sub }));
+            });
+            if (!items.length) { alert('No questions are available for these subjects yet.'); return; }
+            const secs = items.length * PRACTICE_SECS_PER_Q;
+            state.practice = { subjects: subs, items, index: 0, answers: {}, secs, timeLeft: secs, deadline: Date.now() + secs * 1000, timedOut: false };
             setView('practice');
             window.scrollTo(0, 0);
+            startPracticeTimer();
         }
 
         function practiceAnswer(idx) {
@@ -1074,7 +1327,10 @@
         }
 
         function quitPractice() {
-            if (confirm('Leave practice? Your progress in this session will not be saved.')) showDashboard();
+            if (confirm('Leave practice? Your progress in this session will not be saved.')) {
+                if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
+                showDashboard();
+            }
         }
 
         function practiceScore() {
@@ -1084,16 +1340,44 @@
             return right;
         }
 
+        function practiceBreakdown() {
+            const P = state.practice;
+            const b = {};
+            P.items.forEach((q, i) => {
+                const o = b[q.subject] = b[q.subject] || { score: 0, total: 0 };
+                o.total++;
+                if (P.answers[i] === q.answer) o.score++;
+            });
+            return b;
+        }
+
+        function buildPracticeReviewItems() {
+            const P = state.practice;
+            return P.items.map((q, i) => ({
+                s: q.subject, q: q.question, o: q.options, a: q.answer,
+                c: P.answers[i] === undefined ? -1 : P.answers[i], p: q.passage || null
+            }));
+        }
+
         async function finishPractice() {
+            if (state.currentView !== 'practice') return;
+            if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
             const P = state.practice;
             const right = practiceScore();
             setView('practiceResult');
             window.scrollTo(0, 0);
             try {
-                await addDoc(collection(db, 'sessions'), {
+                const ref = doc(collection(db, 'sessions'));
+                let hasReview = false;
+                try {
+                    await setDoc(doc(db, 'reviews', ref.id), { uid: state.user.uid, items: buildPracticeReviewItems() });
+                    hasReview = true;
+                } catch (e) { console.error('Could not save practice review', e); }
+                await setDoc(ref, {
                     uid: state.user.uid, name: state.user.name, regNumber: state.user.regNumber,
-                    subjects: [P.subject], mode: 'practice', status: 'Practice',
+                    subjects: P.subjects, mode: 'practice', status: 'Practice',
                     rawScore: right, totalQuestions: P.items.length,
+                    breakdown: practiceBreakdown(), timeAllowedSecs: P.secs, hasReview,
                     startedAt: serverTimestamp()
                 });
                 state.history = null;
@@ -1128,11 +1412,15 @@
             return `
                 <div class="flex-1 bg-[#faf8f2]">
                     <div class="max-w-3xl mx-auto p-4 sm:p-6">
-                        <div class="flex items-center justify-between mb-3">
-                            <div>
-                                <span class="bg-amber-400/10 text-amber-800 text-[11px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">Practice · ${esc(P.subject)}</span>
+                        <div class="flex items-center justify-between gap-3 mb-3">
+                            <span class="bg-amber-400/10 text-amber-800 text-[11px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20 truncate">Practice · ${esc(subjLabel(q.subject))}</span>
+                            <div class="flex items-center gap-3 shrink-0">
+                                <div class="bg-white px-3 py-1.5 rounded-xl border border-[#e8e2d2] flex items-center gap-1.5">
+                                    <span class="text-[10px] text-[#58796b] font-semibold uppercase">Time</span>
+                                    <span id="practice-timer" class="font-mono text-emerald-700 font-bold text-sm">${formatClock(P.timeLeft)}</span>
+                                </div>
+                                <button onclick="quitPractice()" class="text-xs text-[#58796b] hover:text-[#0b3d2b] font-semibold">✕ Leave</button>
                             </div>
-                            <button onclick="quitPractice()" class="text-xs text-[#58796b] hover:text-[#0b3d2b] font-semibold">✕ Leave</button>
                         </div>
                         <div class="h-1.5 bg-[#eef1ec] rounded-full mb-4"><div class="h-1.5 bg-amber-400 rounded-full transition-all" style="width:${pct}%"></div></div>
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-6 shadow-xl">
@@ -1153,12 +1441,7 @@
         }
 
         function startPracticeReview() {
-            const P = state.practice;
-            const items = P.items.map((q, i) => ({
-                s: P.subject, q: q.question, o: q.options, a: q.answer,
-                c: P.answers[i] === undefined ? -1 : P.answers[i], p: q.passage || null
-            }));
-            state.review = { items, tab: 'all', back: 'practiceResult' };
+            state.review = { items: buildPracticeReviewItems(), tab: 'all', back: 'practiceResult' };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -1168,14 +1451,22 @@
             const right = practiceScore();
             const total = P.items.length;
             const pct = Math.round((right / total) * 100);
-            const msg = pct >= 70 ? 'Great work! Keep it up. 🌟' : (pct >= 50 ? 'Good effort. Review the ones you missed. 👍' : 'Keep practising. Review your answers to learn from them. 📚');
+            const bd = practiceBreakdown();
+            const msg = P.timedOut ? 'Time ran out. Unanswered questions count as wrong. ⏱️' : (pct >= 70 ? 'Great work! Keep it up. 🌟' : (pct >= 50 ? 'Good effort. Review the ones you missed. 👍' : 'Keep practising. Review your answers to learn from them. 📚'));
             return `
                 <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2]">
                     <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-8 shadow-xl text-center">
-                        <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">Practice complete · ${esc(P.subject)}</span>
+                        <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">Practice complete</span>
                         <p class="text-6xl font-extrabold text-emerald-700 mt-5">${right}<span class="text-2xl text-[#7a9588]"> / ${total}</span></p>
                         <p class="text-[#2f5546] mt-1">${pct}% correct</p>
                         <p class="text-sm text-[#58796b] mt-4">${msg}</p>
+                        <div class="grid grid-cols-2 gap-2 mt-6 text-left">
+                            ${Object.entries(bd).map(([sub, d]) => `
+                                <div class="bg-[#faf8f2] p-3 rounded-lg border border-[#e8e2d2] flex justify-between items-center">
+                                    <span class="text-xs text-[#2f5546] font-medium">${esc(subjLabel(sub))}</span>
+                                    <span class="text-xs font-bold text-[#0b5a3c]">${d.score} / ${d.total}</span>
+                                </div>`).join('')}
+                        </div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
                             <button onclick="startPracticeReview()" class="bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold py-3 rounded-xl transition">Review answers</button>
                             <button onclick="startPractice()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Practise again</button>
@@ -1203,67 +1494,116 @@
 
         function renderAdmin() {
             const { users, sessions } = state.adminData;
+            const card = 'bg-white border border-[#e8e2d2] rounded-2xl';
+            const badge = x => x.status === 'Completed'
+                ? 'bg-[#e1f3e8] text-[#0b5a3c] border border-[#bfe0cd]'
+                : (x.mode === 'practice' ? 'bg-[#f6ecc9] text-[#8a6500] border border-[#ecdca4]' : 'bg-[#eef1ec] text-[#58796b] border border-[#e8e2d2]');
             return `
-                <div class="flex-1 flex flex-col p-6 bg-slate-950 max-w-6xl mx-auto w-full">
-                    <div class="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
-                        <div>
-                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">Admin Portal</span>
-                            <h2 class="text-2xl font-bold text-white mt-2">Candidate Activity & Accounts</h2>
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="sticky top-0 z-20 bg-white border-b border-[#e8e2d2]">
+                        <div class="max-w-6xl mx-auto px-4 py-2.5 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-lg bg-[#066c43] text-white flex items-center justify-center text-sm">🎓</div>
+                                <div class="leading-tight">
+                                    <p class="font-display font-bold text-xs">GENIUS TUTOR</p>
+                                    <p class="text-[9px] font-semibold tracking-[0.2em] text-[#b88700]">ADMIN</p>
+                                </div>
+                            </div>
+                            <button onclick="showDashboard()" class="text-xs font-medium px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">← Dashboard</button>
                         </div>
-                        <button onclick="showDashboard()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-xl transition">← Back</button>
-                    </div>
+                    </header>
 
-                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl mb-8">
-                        <h3 class="font-bold text-white text-base mb-4">Registered Students (${users.length})</h3>
-                        ${users.length === 0 ? '<p class="text-xs text-slate-500">No students yet.</p>' : `
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                ${users.map(u => `
-                                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                                        <p class="font-bold text-white text-sm">${esc(u.name)}</p>
-                                        <p class="text-xs text-indigo-400 font-mono break-all">${esc(u.email)}</p>
-                                        <p class="text-xs text-slate-400 mt-1">Reg: ${esc(u.regNumber)}</p>
-                                    </div>`).join('')}
-                            </div>`}
-                    </div>
+                    <main class="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+                        <span class="text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">ADMIN PORTAL</span>
+                        <h1 class="font-display font-extrabold text-2xl sm:text-3xl mt-3">Candidate activity & accounts</h1>
 
-                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl overflow-hidden">
-                        <div class="flex items-center justify-between mb-6">
-                            <h3 class="font-bold text-white text-base">Recent CBT Sessions</h3>
-                            <button onclick="openAdmin()" class="text-xs text-indigo-400 hover:text-indigo-300">↻ Refresh</button>
+                        <div class="${card} p-5 mt-6">
+                            <h2 class="font-display font-bold text-lg mb-4">Registered students (${users.length})</h2>
+                            ${users.length === 0 ? '<p class="text-sm text-[#0b3d2b]/60">No students yet.</p>' : `
+                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    ${users.map(u => `
+                                        <div class="bg-[#faf8f2] p-4 rounded-xl border border-[#e8e2d2]">
+                                            <p class="font-semibold text-sm">${esc(u.name)}</p>
+                                            <p class="text-xs text-[#0b5a3c] break-all mt-0.5">${esc(u.email)}</p>
+                                            <p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>
+                                        </div>`).join('')}
+                                </div>`}
                         </div>
-                        ${sessions.length === 0 ? '<div class="text-center py-12 text-slate-500"><p>No sessions yet.</p></div>' : `
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr class="border-b border-slate-800 text-slate-400 text-xs uppercase">
-                                            <th class="py-3 px-4">Candidate</th><th class="py-3 px-4">Reg No.</th>
-                                            <th class="py-3 px-4">Subjects</th><th class="py-3 px-4">Started</th>
-                                            <th class="py-3 px-4">Score</th><th class="py-3 px-4">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-800/60 text-sm text-slate-300">
-                                        ${sessions.map(s => `
-                                            <tr>
-                                                <td class="py-3.5 px-4 font-semibold text-white">${esc(s.name)}</td>
-                                                <td class="py-3.5 px-4 font-mono text-indigo-400">${esc(s.regNumber)}</td>
-                                                <td class="py-3.5 px-4 text-xs uppercase">${esc((s.subjects || []).join(', '))}</td>
-                                                <td class="py-3.5 px-4 text-slate-400">${esc(fmtTime(s.startedAt))}</td>
-                                                <td class="py-3.5 px-4">${s.mode === 'practice' ? esc(s.rawScore) + ' / ' + esc(s.totalQuestions) : (s.scaledScore !== undefined ? esc(s.scaledScore) + ' / 400' : '—')}</td>
-                                                <td class="py-3.5 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${s.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : (s.mode === 'practice' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20')}">${esc(s.status)}</span></td>
-                                            </tr>`).join('')}
-                                    </tbody>
-                                </table>
-                            </div>`}
-                    </div>
+
+                        <div class="${card} p-5 mt-6 overflow-hidden">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="font-display font-bold text-lg">Recent sessions</h2>
+                                <button onclick="openAdmin()" class="text-xs font-semibold text-[#0b5a3c] hover:underline">↻ Refresh</button>
+                            </div>
+                            ${sessions.length === 0 ? '<p class="text-center py-10 text-sm text-[#0b3d2b]/60">No sessions yet.</p>' : `
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left border-collapse min-w-[640px]">
+                                        <thead>
+                                            <tr class="border-b border-[#e8e2d2] text-[#0b3d2b]/60 text-xs uppercase">
+                                                <th class="py-3 px-3 font-semibold">Candidate</th><th class="py-3 px-3 font-semibold">Reg No.</th>
+                                                <th class="py-3 px-3 font-semibold">Subjects</th><th class="py-3 px-3 font-semibold">Started</th>
+                                                <th class="py-3 px-3 font-semibold">Score</th><th class="py-3 px-3 font-semibold">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-[#efe9d9] text-sm">
+                                            ${sessions.map(x => `
+                                                <tr>
+                                                    <td class="py-3 px-3 font-semibold">${esc(x.name)}</td>
+                                                    <td class="py-3 px-3 text-[#0b5a3c]">${esc(x.regNumber)}</td>
+                                                    <td class="py-3 px-3 text-xs uppercase text-[#0b3d2b]/70">${esc((x.subjects || []).join(', '))}</td>
+                                                    <td class="py-3 px-3 text-[#0b3d2b]/60 text-xs">${esc(fmtTime(x.startedAt))}</td>
+                                                    <td class="py-3 px-3 font-semibold">${x.mode === 'practice' ? esc(x.rawScore) + ' / ' + esc(x.totalQuestions) : (x.scaledScore !== undefined ? esc(x.scaledScore) + ' / 400' : '—')}</td>
+                                                    <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${badge(x)}">${esc(x.mode === 'practice' ? 'Practice' : (x.status || '—'))}</span></td>
+                                                </tr>`).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>`}
+                        </div>
+                    </main>
                 </div>`;
         }
+
+        // --- AUTO SIGN-OUT: students must sign in again after being away for 3 minutes ---
+        const AWAY_LIMIT_MS = 3 * 60 * 1000;
+        const AWAY_NOTICE = 'You were signed out because you were away for more than 3 minutes. Please sign in again.';
+        let memActive = 0;
+        function touchActive() {
+            memActive = Date.now();
+            try { localStorage.setItem('gt_last_active', String(memActive)); } catch (_) {}
+        }
+        function lastActive() {
+            try { const v = Number(localStorage.getItem('gt_last_active')); if (v) return v; } catch (_) {}
+            return memActive;
+        }
+        function awayTooLong() {
+            const t = lastActive();
+            return !!t && (Date.now() - t) > AWAY_LIMIT_MS;
+        }
+        async function forceLogout(msg) {
+            try { await signOut(auth); } catch (_) {}
+            if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
+            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null;
+            setView('login', msg);
+        }
+        function checkAway() {
+            if (!state.user) return;
+            // never log someone out in the middle of an exam or practice, it would lose their work
+            if (['exam', 'practice', 'result'].includes(state.currentView)) { touchActive(); return; }
+            if (awayTooLong()) forceLogout(AWAY_NOTICE);
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') touchActive(); else checkAway();
+        });
+        window.addEventListener('pagehide', touchActive);
+        window.addEventListener('focus', checkAway);
+        setInterval(() => { if (document.visibilityState === 'visible') touchActive(); }, 15000);
 
         // Expose handlers used by inline onclick/onsubmit attributes
         Object.assign(window, {
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            openPractice, practiceSubject, setPSubject, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
+            openPractice, openExamSetup, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
         });
 
         render();
