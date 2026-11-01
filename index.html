@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Genius Tutor JAMB CBT</title>
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>body { font-family: 'Inter', sans-serif; }</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+    <div id="app" class="flex-1 flex flex-col"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+        import {
+            getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+            sendEmailVerification, sendPasswordResetEmail, signOut
+        } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+        import {
+            getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, getDocs, collection,
+            query, orderBy, limit, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDXuXXjUxjpRJuEJLVQqTYt33tku3Nb4rQ",
+            authDomain: "genius-tutor-4a7b2.firebaseapp.com",
+            projectId: "genius-tutor-4a7b2",
+            storageBucket: "genius-tutor-4a7b2.firebasestorage.app",
+            messagingSenderId: "550046537454",
+            appId: "1:550046537454:web:3446c9513e46f752ff05ff"
+        };
+
+        const fbApp = initializeApp(firebaseConfig);
+        const auth = getAuth(fbApp);
+        const db = getFirestore(fbApp);
+
+        // --- QUESTION BANK (placeholder: replace with real questions) ---
+        function generateSubjectBank(prefix, count) {
+            const bank = [];
+            for (let i = 1; i <= count; i++) {
+                bank.push({
+                    id: i,
+                    question: `[${prefix.toUpperCase()}] Standard JAMB Practice Item #${i}: Which of the following principles or rules correctly applies to this scenario?`,
+                    options: [
+                        `Option A for question ${i} representing foundational concept`,
+                        `Option B for question ${i} representing alternative theory`,
+                        `Option C for question ${i} representing correct standard solution`,
+                        `Option D for question ${i} representing distractor variable`
+                    ],
+                    answer: 2,
+                    explanation: `Explanation for question ${i}.`
+                });
+            }
+            return bank;
+        }
+        const questionBank = {
+            english: generateSubjectBank("Use of English", 125),
+            chemistry: generateSubjectBank("Chemistry", 125),
+            physics: generateSubjectBank("Physics", 125),
+            biology: generateSubjectBank("Biology", 125),
+            mathematics: generateSubjectBank("Mathematics", 125),
+            economics: generateSubjectBank("Economics", 125),
+            government: generateSubjectBank("Government", 125),
+            literature: generateSubjectBank("Literature in English", 125)
+        };
+
+        // --- STATE ---
+        let state = {
+            currentView: 'loading',
+            user: null,          // profile from Firestore
+            isAdmin: false,
+            examData: {},
+            activeSubject: 'english',
+            currentIndex: 0,
+            answers: {},
+            flagged: {},
+            timeLeft: 7200,
+            timerInterval: null,
+            sessionId: null,
+            adminData: { users: [], sessions: [] },
+            notice: ''
+        };
+        let registering = false;
+
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+        function getRandomQuestions(key, count) {
+            const all = [...questionBank[key]];
+            for (let i = all.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [all[i], all[j]] = [all[j], all[i]];
+            }
+            return all.slice(0, count);
+        }
+
+        function friendlyError(err) {
+            const map = {
+                'auth/email-already-in-use': 'An account with this email already exists. Please log in.',
+                'auth/invalid-credential': 'Incorrect email or password.',
+                'auth/wrong-password': 'Incorrect email or password.',
+                'auth/user-not-found': 'No account found for this email. Please register.',
+                'auth/weak-password': 'Password must be at least 6 characters.',
+                'auth/too-many-requests': 'Too many attempts. Please wait a few minutes and try again.',
+                'auth/network-request-failed': 'Network error. Check your internet connection.',
+                'permission-denied': 'Permission denied. Check your Firestore security rules.'
+            };
+            return map[err.code] || err.message || 'Something went wrong.';
+        }
+
+        // --- AUTH STATE ---
+        onAuthStateChanged(auth, async (fbUser) => {
+            if (registering) return;
+            if (state.currentView === 'exam' || state.currentView === 'result') return;
+            if (!fbUser || !fbUser.emailVerified) {
+                state.user = null;
+                state.isAdmin = false;
+                if (state.currentView === 'loading') { state.currentView = 'login'; render(); }
+                return;
+            }
+            try {
+                await loadProfile(fbUser);
+                if (['loading', 'login', 'register'].includes(state.currentView)) {
+                    state.currentView = 'dashboard';
+                    render();
+                }
+            } catch (e) {
+                console.error(e);
+                state.currentView = 'login';
+                render();
+            }
+        });
+
+        async function loadProfile(fbUser) {
+            const snap = await getDoc(doc(db, 'users', fbUser.uid));
+            if (!snap.exists()) throw new Error('Profile not found. Please register again.');
+            state.user = { uid: fbUser.uid, ...snap.data() };
+            const adminSnap = await getDoc(doc(db, 'admins', fbUser.uid));
+            state.isAdmin = adminSnap.exists();
+        }
+
+        // --- RENDER ROUTER ---
+        function render() {
+            const app = document.getElementById('app');
+            const views = {
+                loading: renderLoading, login: renderLogin, register: renderRegister,
+                dashboard: renderDashboard, exam: renderExam, result: renderResult, admin: renderAdmin
+            };
+            app.innerHTML = (views[state.currentView] || renderLoading)();
+            if (state.currentView === 'exam') updateTimerDisplay();
+        }
+
+        function setView(v, notice = '') { state.currentView = v; state.notice = notice; render(); }
+
+        function noticeBox() {
+            return state.notice ? `<div class="mb-4 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-xl p-3 leading-relaxed">${esc(state.notice)}</div>` : '';
+        }
+
+        function renderLoading() {
+            return `<div class="flex-1 flex items-center justify-center text-slate-400 text-sm">Loading…</div>`;
+        }
+
+        // --- LOGIN ---
+        function renderLogin() {
+            return `
+                <div class="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
+                    <div class="max-w-md w-full bg-slate-900/80 backdrop-blur border border-indigo-500/30 rounded-2xl p-8 shadow-2xl shadow-indigo-950/50">
+                        <div class="text-center mb-6">
+                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">JAMB CBT Simulator</span>
+                            <h1 class="text-3xl font-bold mt-3 text-white tracking-tight">Genius Tutor JAMB</h1>
+                            <p class="text-slate-400 text-sm mt-1">Sign in to continue</p>
+                        </div>
+                        ${noticeBox()}
+                        <form onsubmit="handleLogin(event)" class="space-y-4">
+                            <input type="email" id="loginEmail" required placeholder="Email address" autocomplete="email"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                            <input type="password" id="loginPassword" required placeholder="Password" autocomplete="current-password"
+                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500">
+                            <button type="submit" id="login-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-indigo-600/30 transition active:scale-[0.98]">
+                                Sign In
+                            </button>
+                        </form>
+                        <div class="mt-5 pt-5 border-t border-slate-800/80 text-center space-y-3">
+                            <button onclick="handleReset()" class="text-xs text-slate-400 hover:text-slate-300 block w-full">Forgot password?</button>
+                            <button onclick="setView('register')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold block w-full">📝 New student? Register</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value;
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true; btn.textContent = 'Signing in…';
+            try {
+                const cred = await signInWithEmailAndPassword(auth, email, password);
+                if (!cred.user.emailVerified) {
+                    try { await sendEmailVerification(cred.user); } catch (_) {}
+                    await signOut(auth);
+                    setView('login', 'Your email is not verified yet. We just re-sent the verification link. Check your inbox (and spam), click it, then sign in.');
+                    return;
+                }
+                await loadProfile(cred.user);
+                setView('dashboard');
+            } catch (err) {
+                alert(friendlyError(err));
+                btn.disabled = false; btn.textContent = 'Sign In';
+            }
+        }
+
+        async function handleReset() {
+            const email = document.getElementById('loginEmail').value.trim();
+            if (!email) { alert('Type your email in the email box first.'); return; }
+            try {
+                await sendPasswordResetEmail(auth, email);
+                setView('login', 'If an account exists for ' + email + ', a password reset link has been sent.');
+            } catch (err) { alert(friendlyError(err)); }
+        }
+
+        // --- REGISTER ---
+        function subjectOptions(selected) {
+            return ['chemistry','physics','biology','mathematics','economics','government','literature']
+                .map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('');
+        }
+        const selectCls = "w-full mt-0.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200";
+        const inputCls = "w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 text-sm";
+
+        function renderRegister() {
+            return `
+                <div class="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
+                    <div class="max-w-md w-full bg-slate-900/80 backdrop-blur border border-indigo-500/30 rounded-2xl p-8 shadow-2xl shadow-indigo-950/50">
+                        <div class="text-center mb-6">
+                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">Account Creation</span>
+                            <h1 class="text-2xl font-bold mt-3 text-white">Register for Genius Tutor</h1>
+                            <p class="text-slate-400 text-xs mt-1">A verification link will be emailed to you</p>
+                        </div>
+                        <form onsubmit="handleRegister(event)" class="space-y-4">
+                            <input type="text" id="regFullName" required placeholder="Full name" class="${inputCls}">
+                            <input type="text" id="regNumberInput" required placeholder="JAMB registration number" class="${inputCls}">
+                            <input type="email" id="regEmailInput" required placeholder="Email address" autocomplete="email" class="${inputCls}">
+                            <input type="password" id="regPassword" required minlength="6" placeholder="Password (min 6 characters)" autocomplete="new-password" class="${inputCls}">
+                            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-2">
+                                <label class="block text-xs font-medium text-indigo-400 uppercase tracking-wider">Subject Combination</label>
+                                <div>
+                                    <span class="text-[10px] text-slate-400">1. Use of English (compulsory, 60 Qs)</span>
+                                    <input type="text" disabled value="Use of English" class="w-full mt-0.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
+                                </div>
+                                <div><span class="text-[10px] text-slate-400">2. Second subject</span><select id="regSub2" class="${selectCls}">${subjectOptions('chemistry')}</select></div>
+                                <div><span class="text-[10px] text-slate-400">3. Third subject</span><select id="regSub3" class="${selectCls}">${subjectOptions('physics')}</select></div>
+                                <div><span class="text-[10px] text-slate-400">4. Fourth subject</span><select id="regSub4" class="${selectCls}">${subjectOptions('biology')}</select></div>
+                            </div>
+                            <button type="submit" id="submit-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition text-sm">
+                                Create Account 📧
+                            </button>
+                        </form>
+                        <div class="mt-4 text-center">
+                            <button onclick="setView('login')" class="text-xs text-slate-400 hover:text-slate-200">← Back to Sign In</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('regFullName').value.trim();
+            const regNumber = document.getElementById('regNumberInput').value.trim();
+            const email = document.getElementById('regEmailInput').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const subs = ['regSub2','regSub3','regSub4'].map(id => document.getElementById(id).value);
+
+            if (new Set(subs).size !== 3) { alert('Please choose three different subjects.'); return; }
+
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true; btn.textContent = 'Creating account…';
+            registering = true;
+            try {
+                const cred = await createUserWithEmailAndPassword(auth, email, password);
+                await setDoc(doc(db, 'users', cred.user.uid), {
+                    name, regNumber, email,
+                    subjects: ['english', ...subs],
+                    createdAt: serverTimestamp()
+                });
+                await sendEmailVerification(cred.user);
+                await signOut(auth);
+                registering = false;
+                setView('login', 'Account created! A verification link was sent to ' + email + '. Click it, then sign in here.');
+            } catch (err) {
+                registering = false;
+                alert(friendlyError(err));
+                btn.disabled = false; btn.textContent = 'Create Account 📧';
+            }
+        }
+
+        // --- DASHBOARD ---
+        function renderDashboard() {
+            const u = state.user;
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950">
+                    <div class="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-xl">
+                        <div class="w-16 h-16 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold mb-4">
+                            ${esc(u.name.charAt(0).toUpperCase())}
+                        </div>
+                        <h2 class="text-2xl font-bold text-white">Ready, ${esc(u.name)}?</h2>
+                        <p class="text-slate-400 text-xs mt-1">Verified email: <span class="text-indigo-400">${esc(u.email)}</span></p>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 my-6 text-left">
+                            <span class="text-xs text-slate-500 uppercase font-semibold">Your subjects (180 questions)</span>
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                ${u.subjects.map(s => `<span class="px-3 py-1 bg-indigo-950 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold uppercase">${esc(s)} (${s === 'english' ? '60' : '40'} Qs)</span>`).join('')}
+                            </div>
+                        </div>
+                        <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 mb-6 leading-relaxed">
+                            ⚠️ <strong>JAMB Rules:</strong> You have 2 hours (120 minutes) to complete all 4 subjects. Use the subject tabs to switch between them.
+                        </div>
+                        <div class="flex gap-3">
+                            <button onclick="handleLogout()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-3 rounded-xl transition">Logout</button>
+                            <button onclick="startExamSession()" class="flex-[2] bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-8 rounded-xl shadow-lg shadow-indigo-600/30 transition">Begin CBT Exam 🚀</button>
+                        </div>
+                        ${state.isAdmin ? `<button onclick="openAdmin()" class="mt-4 text-xs text-slate-400 hover:text-slate-200">🔒 Tutor / Admin dashboard</button>` : ''}
+                    </div>
+                </div>`;
+        }
+
+        async function handleLogout() {
+            await signOut(auth);
+            state.user = null; state.isAdmin = false;
+            setView('login');
+        }
+
+        async function startExamSession() {
+            const u = state.user;
+            state.examData = {
+                english: getRandomQuestions('english', 60),
+                [u.subjects[1]]: getRandomQuestions(u.subjects[1], 40),
+                [u.subjects[2]]: getRandomQuestions(u.subjects[2], 40),
+                [u.subjects[3]]: getRandomQuestions(u.subjects[3], 40)
+            };
+            state.activeSubject = 'english';
+            state.currentIndex = 0;
+            state.answers = {};
+            state.flagged = {};
+            state.timeLeft = 7200;
+            state.sessionId = null;
+
+            try {
+                const ref = await addDoc(collection(db, 'sessions'), {
+                    uid: u.uid, name: u.name, regNumber: u.regNumber,
+                    subjects: u.subjects, status: 'In progress',
+                    startedAt: serverTimestamp()
+                });
+                state.sessionId = ref.id;
+            } catch (err) { console.error('Could not log session start', err); }
+
+            setView('exam');
+            startTimer();
+        }
+
+        // --- EXAM ---
+        function startTimer() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            state.timerInterval = setInterval(() => {
+                if (state.timeLeft > 0) {
+                    state.timeLeft--;
+                    updateTimerDisplay();
+                } else {
+                    clearInterval(state.timerInterval);
+                    alert('Time is up! Submitting exam automatically.');
+                    submitExam();
+                }
+            }, 1000);
+        }
+
+        function updateTimerDisplay() {
+            const el = document.getElementById('timer-display');
+            if (!el) return;
+            const h = Math.floor(state.timeLeft / 3600);
+            const m = Math.floor((state.timeLeft % 3600) / 60);
+            const s = state.timeLeft % 60;
+            el.textContent = [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+            if (state.timeLeft < 300) el.classList.add('text-rose-500', 'animate-pulse');
+        }
+
+        function renderExam() {
+            const questions = state.examData[state.activeSubject];
+            const q = questions[state.currentIndex];
+            const total = questions.length;
+            const ansKey = `${state.activeSubject}-${state.currentIndex}`;
+            const selectedOpt = state.answers[ansKey];
+            const isFlagged = state.flagged[ansKey];
+
+            let totalAnswered = 0, totalCount = 0;
+            state.user.subjects.forEach(sub => {
+                const len = state.examData[sub].length;
+                totalCount += len;
+                for (let i = 0; i < len; i++) if (state.answers[`${sub}-${i}`] !== undefined) totalAnswered++;
+            });
+
+            return `
+                <div class="flex-1 flex flex-col bg-slate-950">
+                    <header class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+                        <div>
+                            <h2 class="font-bold text-white tracking-wide">Genius Tutor CBT</h2>
+                            <p class="text-xs text-slate-400">Candidate: <span class="text-indigo-400 font-medium">${esc(state.user.name)}</span></p>
+                        </div>
+                        <div class="flex items-center gap-6">
+                            <div class="bg-slate-950 px-4 py-2 rounded-xl border border-slate-800 flex items-center gap-2">
+                                <span class="text-xs text-slate-400 font-semibold uppercase">Time:</span>
+                                <span id="timer-display" class="font-mono text-emerald-400 font-bold text-lg">02:00:00</span>
+                            </div>
+                            <button onclick="confirmSubmit()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-lg shadow-rose-600/20 transition">Submit Exam</button>
+                        </div>
+                    </header>
+
+                    <div class="bg-slate-950 border-b border-slate-800 px-6 py-2.5 flex gap-2 overflow-x-auto">
+                        ${state.user.subjects.map(sub => `
+                            <button onclick="switchSubject('${sub}')" class="px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${state.activeSubject === sub ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'}">
+                                ${esc(sub)} (${state.examData[sub].length} Qs)
+                            </button>`).join('')}
+                    </div>
+
+                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-4 max-w-7xl mx-auto w-full p-6 gap-6">
+                        <div class="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between shadow-xl">
+                            <div>
+                                <div class="flex items-center justify-between mb-6">
+                                    <span class="text-xs font-semibold px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 uppercase">
+                                        ${esc(state.activeSubject)} — Question ${state.currentIndex + 1} of ${total}
+                                    </span>
+                                    <button onclick="toggleFlag()" class="text-xs font-semibold px-3 py-1 rounded-full border transition ${isFlagged ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'}">
+                                        ${isFlagged ? '🚩 Flagged' : '🏳️ Flag for Review'}
+                                    </button>
+                                </div>
+                                <h3 class="text-lg font-medium text-slate-100 mb-6 leading-relaxed">${esc(q.question)}</h3>
+                                <div class="space-y-3">
+                                    ${q.options.map((opt, idx) => `
+                                        <label onclick="selectOption(${idx})" class="flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${selectedOpt === idx ? 'bg-indigo-600/20 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'}">
+                                            <span class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${selectedOpt === idx ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400 border border-slate-800'}">${String.fromCharCode(65 + idx)}</span>
+                                            <span class="text-sm font-medium">${esc(opt)}</span>
+                                        </label>`).join('')}
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between pt-6 mt-6 border-t border-slate-800">
+                                <button onclick="prevQuestion()" ${state.currentIndex === 0 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl bg-slate-800 text-slate-300 font-semibold text-xs hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
+                                <button onclick="nextQuestion()" ${state.currentIndex === total - 1 ? 'disabled' : ''} class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col shadow-xl">
+                            <h4 class="font-bold text-white text-sm mb-2 uppercase tracking-wide">${esc(state.activeSubject)} Palette</h4>
+                            <p class="text-xs text-slate-400 mb-4">Click any number to jump</p>
+                            <div class="grid grid-cols-5 gap-2 overflow-y-auto max-h-[260px] mb-6 p-1">
+                                ${questions.map((_, idx) => {
+                                    const k = `${state.activeSubject}-${idx}`;
+                                    let cls = "bg-slate-950 text-slate-400 border-slate-800";
+                                    if (state.answers[k] !== undefined) cls = "bg-indigo-600/30 text-indigo-300 border-indigo-500/50";
+                                    if (state.currentIndex === idx) cls = "border-2 border-indigo-500 text-white bg-indigo-950";
+                                    if (state.flagged[k]) cls = "bg-amber-500/20 text-amber-300 border-amber-500/50";
+                                    return `<button onclick="jumpTo(${idx})" class="h-10 rounded-lg font-bold text-xs border transition ${cls}">${idx + 1}</button>`;
+                                }).join('')}
+                            </div>
+                            <div class="mt-auto space-y-2 text-xs text-slate-400 pt-4 border-t border-slate-800">
+                                <div class="flex justify-between"><span>Total answered:</span><span class="font-bold text-emerald-400">${totalAnswered} / ${totalCount}</span></div>
+                                <div class="flex justify-between"><span>Unanswered:</span><span class="font-bold text-slate-300">${totalCount - totalAnswered}</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function switchSubject(sub) { state.activeSubject = sub; state.currentIndex = 0; render(); }
+        function selectOption(i) { state.answers[`${state.activeSubject}-${state.currentIndex}`] = i; render(); }
+        function toggleFlag() { const k = `${state.activeSubject}-${state.currentIndex}`; state.flagged[k] = !state.flagged[k]; render(); }
+        function nextQuestion() { if (state.currentIndex < state.examData[state.activeSubject].length - 1) { state.currentIndex++; render(); } }
+        function prevQuestion() { if (state.currentIndex > 0) { state.currentIndex--; render(); } }
+        function jumpTo(i) { state.currentIndex = i; render(); }
+        function confirmSubmit() { if (confirm('Are you sure you want to submit your complete 4-subject JAMB exam?')) submitExam(); }
+
+        function computeResult() {
+            let totalScore = 0, totalCount = 0;
+            const breakdown = {};
+            state.user.subjects.forEach(sub => {
+                let sc = 0;
+                state.examData[sub].forEach((q, idx) => { if (state.answers[`${sub}-${idx}`] === q.answer) sc++; });
+                breakdown[sub] = { score: sc, total: state.examData[sub].length };
+                totalScore += sc;
+                totalCount += state.examData[sub].length;
+            });
+            return { totalScore, totalCount, breakdown, scaled: Math.round((totalScore / totalCount) * 400) };
+        }
+
+        async function submitExam() {
+            if (state.timerInterval) clearInterval(state.timerInterval);
+            const r = computeResult();
+            setView('result');
+            if (state.sessionId) {
+                try {
+                    await updateDoc(doc(db, 'sessions', state.sessionId), {
+                        status: 'Completed',
+                        rawScore: r.totalScore,
+                        totalQuestions: r.totalCount,
+                        scaledScore: r.scaled,
+                        breakdown: r.breakdown,
+                        submittedAt: serverTimestamp()
+                    });
+                } catch (err) { console.error('Could not save result', err); }
+            }
+        }
+
+        // --- RESULT ---
+        function renderResult() {
+            const r = computeResult();
+            let prediction = "Needs Improvement 📚";
+            let color = "text-amber-400 bg-amber-500/10 border-amber-500/20";
+            if (r.scaled >= 280) { prediction = "Outstanding! High likelihood for competitive courses 🌟"; color = "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"; }
+            else if (r.scaled >= 200) { prediction = "Good standing! Admission eligible 👍"; color = "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"; }
+
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950">
+                    <div class="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl">
+                        <div class="text-center mb-6">
+                            <span class="bg-emerald-500/10 text-emerald-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-emerald-500/20">Graded</span>
+                            <h2 class="text-3xl font-bold text-white mt-3">Examination Scorecard</h2>
+                            <p class="text-slate-400 text-sm">Candidate: <span class="text-slate-200 font-medium">${esc(state.user.name)}</span> (${esc(state.user.regNumber)})</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 mb-6 text-center">
+                            <div class="bg-slate-950 p-5 rounded-xl border border-slate-800">
+                                <span class="text-xs text-slate-500 uppercase font-semibold">Scaled score</span>
+                                <p class="text-4xl font-extrabold text-indigo-400 mt-1">${r.scaled} <span class="text-lg text-slate-500">/ 400</span></p>
+                            </div>
+                            <div class="bg-slate-950 p-5 rounded-xl border border-slate-800">
+                                <span class="text-xs text-slate-500 uppercase font-semibold">Correct</span>
+                                <p class="text-4xl font-extrabold text-emerald-400 mt-1">${r.totalScore} <span class="text-lg text-slate-500">/ ${r.totalCount}</span></p>
+                            </div>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6 space-y-3">
+                            <h4 class="font-bold text-white text-xs uppercase tracking-wide">Subject Breakdown</h4>
+                            <div class="grid grid-cols-2 gap-3">
+                                ${Object.entries(r.breakdown).map(([sub, d]) => `
+                                    <div class="bg-slate-900 p-3 rounded-lg border border-slate-800 flex justify-between items-center">
+                                        <span class="text-xs text-slate-300 uppercase font-medium">${esc(sub)}</span>
+                                        <span class="text-xs font-bold text-indigo-400">${d.score} / ${d.total}</span>
+                                    </div>`).join('')}
+                            </div>
+                        </div>
+                        <div class="border rounded-xl p-4 mb-8 flex items-center justify-between ${color}">
+                            <div>
+                                <span class="text-xs font-bold uppercase tracking-wider opacity-80">Admission Readiness</span>
+                                <p class="text-sm font-bold mt-1">${prediction}</p>
+                            </div>
+                            <span class="text-2xl">🎯</span>
+                        </div>
+                        <button onclick="setView('dashboard')" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition">Back to Dashboard</button>
+                    </div>
+                </div>`;
+        }
+
+        // --- ADMIN (access controlled by the admins/{uid} document + Firestore rules) ---
+        async function openAdmin() {
+            if (!state.isAdmin) return;
+            try {
+                const [uSnap, sSnap] = await Promise.all([
+                    getDocs(collection(db, 'users')),
+                    getDocs(query(collection(db, 'sessions'), orderBy('startedAt', 'desc'), limit(100)))
+                ]);
+                state.adminData.users = uSnap.docs.map(d => d.data());
+                state.adminData.sessions = sSnap.docs.map(d => d.data());
+                setView('admin');
+            } catch (err) { alert(friendlyError(err)); }
+        }
+
+        function fmtTime(ts) { return ts && ts.toDate ? ts.toDate().toLocaleString() : '—'; }
+
+        function renderAdmin() {
+            const { users, sessions } = state.adminData;
+            return `
+                <div class="flex-1 flex flex-col p-6 bg-slate-950 max-w-6xl mx-auto w-full">
+                    <div class="flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
+                        <div>
+                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">Admin Portal</span>
+                            <h2 class="text-2xl font-bold text-white mt-2">Candidate Activity & Accounts</h2>
+                        </div>
+                        <button onclick="setView('dashboard')" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold px-4 py-2.5 rounded-xl transition">← Back</button>
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl mb-8">
+                        <h3 class="font-bold text-white text-base mb-4">Registered Students (${users.length})</h3>
+                        ${users.length === 0 ? '<p class="text-xs text-slate-500">No students yet.</p>' : `
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                ${users.map(u => `
+                                    <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                                        <p class="font-bold text-white text-sm">${esc(u.name)}</p>
+                                        <p class="text-xs text-indigo-400 font-mono break-all">${esc(u.email)}</p>
+                                        <p class="text-xs text-slate-400 mt-1">Reg: ${esc(u.regNumber)}</p>
+                                    </div>`).join('')}
+                            </div>`}
+                    </div>
+
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl overflow-hidden">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="font-bold text-white text-base">Recent CBT Sessions</h3>
+                            <button onclick="openAdmin()" class="text-xs text-indigo-400 hover:text-indigo-300">↻ Refresh</button>
+                        </div>
+                        ${sessions.length === 0 ? '<div class="text-center py-12 text-slate-500"><p>No sessions yet.</p></div>' : `
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-800 text-slate-400 text-xs uppercase">
+                                            <th class="py-3 px-4">Candidate</th><th class="py-3 px-4">Reg No.</th>
+                                            <th class="py-3 px-4">Subjects</th><th class="py-3 px-4">Started</th>
+                                            <th class="py-3 px-4">Score</th><th class="py-3 px-4">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800/60 text-sm text-slate-300">
+                                        ${sessions.map(s => `
+                                            <tr>
+                                                <td class="py-3.5 px-4 font-semibold text-white">${esc(s.name)}</td>
+                                                <td class="py-3.5 px-4 font-mono text-indigo-400">${esc(s.regNumber)}</td>
+                                                <td class="py-3.5 px-4 text-xs uppercase">${esc((s.subjects || []).join(', '))}</td>
+                                                <td class="py-3.5 px-4 text-slate-400">${esc(fmtTime(s.startedAt))}</td>
+                                                <td class="py-3.5 px-4">${s.scaledScore !== undefined ? esc(s.scaledScore) + ' / 400' : '—'}</td>
+                                                <td class="py-3.5 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${s.status === 'Completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}">${esc(s.status)}</span></td>
+                                            </tr>`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>`}
+                    </div>
+                </div>`;
+        }
+
+        // Expose handlers used by inline onclick/onsubmit attributes
+        Object.assign(window, {
+            setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
+            switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
+            confirmSubmit, openAdmin
+        });
+
+        render();
+    </script>
+</body>
+</html>
