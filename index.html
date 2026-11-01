@@ -300,31 +300,52 @@
 
         // --- LOGIN ---
         function renderLogin() {
+            const inputCls = "w-full bg-white border border-[#d9d4c3] rounded-lg px-3 py-2.5 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c] focus:ring-1 focus:ring-[#0b5a3c]";
             return `
-                <div class="flex-1 flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900">
-                    <div class="max-w-md w-full bg-slate-900/80 backdrop-blur border border-indigo-500/30 rounded-2xl p-8 shadow-2xl shadow-indigo-950/50">
-                        <div class="text-center mb-6">
-                            <span class="bg-indigo-500/10 text-indigo-400 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-indigo-500/20">JAMB CBT Simulator</span>
-                            <h1 class="text-3xl font-bold mt-3 text-white tracking-tight">Genius Tutor JAMB</h1>
-                            <p class="text-slate-400 text-sm mt-1">Sign in to continue</p>
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="bg-gradient-to-b from-[#0b6b45] to-[#00170f] px-4 sm:px-8 py-3">
+                        <button onclick="setView('home')" class="flex items-center gap-2.5 text-left">
+                            <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
+                            <div class="leading-tight text-white">
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                            </div>
+                        </button>
+                    </header>
+
+                    <main class="flex-1 px-4 pt-8 pb-10">
+                        <div class="max-w-sm mx-auto bg-white border border-[#e8e2d2] rounded-2xl p-6 shadow-sm">
+                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR JAMB CBT</p>
+                            <h1 class="font-display font-bold text-xl mt-1">Sign in to your account</h1>
+
+                            ${state.notice ? `<div class="mt-4 text-xs bg-[#e7f3ec] border border-[#cfe5d8] text-[#0b3d2b] rounded-lg p-3 leading-relaxed">${esc(state.notice)}</div>` : ''}
+
+                            <form onsubmit="handleLogin(event)" class="mt-5 space-y-4">
+                                <div>
+                                    <label for="loginEmail" class="block text-xs font-medium mb-1.5">Email</label>
+                                    <input type="email" id="loginEmail" required autocomplete="email" class="${inputCls}">
+                                </div>
+                                <div>
+                                    <div class="flex items-center justify-between mb-1.5">
+                                        <label for="loginPassword" class="text-xs font-medium">Password</label>
+                                        <button type="button" onclick="handleReset()" class="text-[11px] font-medium text-[#0b5a3c] hover:underline">Forgot password?</button>
+                                    </div>
+                                    <input type="password" id="loginPassword" required autocomplete="current-password" class="${inputCls}">
+                                </div>
+                                <p id="login-error" class="text-xs text-red-600 min-h-[1rem]"></p>
+                                <button type="submit" id="login-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Sign in</button>
+                            </form>
+
+                            <p class="text-center text-xs text-[#0b3d2b]/70 mt-5">New here? <button onclick="setView('register')" class="font-semibold text-[#0b5a3c] hover:underline">Create an account</button></p>
+                            <p class="text-center mt-3"><button onclick="setView('home')" class="text-[11px] text-[#0b3d2b]/50 hover:text-[#0b3d2b]">← Back to home</button></p>
                         </div>
-                        ${noticeBox()}
-                        <form onsubmit="handleLogin(event)" class="space-y-4">
-                            <input type="email" id="loginEmail" required placeholder="Email address" autocomplete="email"
-                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500">
-                            <input type="password" id="loginPassword" required placeholder="Password" autocomplete="current-password"
-                                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500">
-                            <button type="submit" id="login-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-indigo-600/30 transition active:scale-[0.98]">
-                                Sign In
-                            </button>
-                        </form>
-                        <div class="mt-5 pt-5 border-t border-slate-800/80 text-center space-y-3">
-                            <button onclick="handleReset()" class="text-xs text-slate-400 hover:text-slate-300 block w-full">Forgot password?</button>
-                            <button onclick="setView('register')" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold block w-full">📝 New student? Register</button>
-                            <button onclick="setView('home')" class="text-xs text-slate-400 hover:text-slate-300 block w-full">← Back to home</button>
-                        </div>
-                    </div>
+                    </main>
                 </div>`;
+        }
+
+        function showLoginError(msg) {
+            const el = document.getElementById('login-error');
+            if (el) el.textContent = msg;
         }
 
         async function handleLogin(e) {
@@ -332,6 +353,7 @@
             const email = document.getElementById('loginEmail').value.trim();
             const password = document.getElementById('loginPassword').value;
             const btn = document.getElementById('login-btn');
+            showLoginError('');
             btn.disabled = true; btn.textContent = 'Signing in…';
             try {
                 const cred = await signInWithEmailAndPassword(auth, email, password);
@@ -344,18 +366,18 @@
                 await loadProfile(cred.user);
                 showDashboard();
             } catch (err) {
-                alert(friendlyError(err));
-                btn.disabled = false; btn.textContent = 'Sign In';
+                showLoginError(friendlyError(err));
+                btn.disabled = false; btn.textContent = 'Sign in';
             }
         }
 
         async function handleReset() {
             const email = document.getElementById('loginEmail').value.trim();
-            if (!email) { alert('Type your email in the email box first.'); return; }
+            if (!email) { showLoginError('Type your email in the Email box first, then tap Forgot password.'); return; }
             try {
                 await sendPasswordResetEmail(auth, email);
                 setView('login', 'If an account exists for ' + email + ', a password reset link has been sent.');
-            } catch (err) { alert(friendlyError(err)); }
+            } catch (err) { showLoginError(friendlyError(err)); }
         }
 
         // --- REGISTER ---
@@ -433,34 +455,156 @@
         }
 
         // --- DASHBOARD ---
+        function subjLabel(sub) {
+            const m = { english: 'Use of English', literature: 'Literature in English' };
+            return m[sub] || (sub.charAt(0).toUpperCase() + sub.slice(1));
+        }
+
+        function practiceSubject(sub) {
+            state.psetup.subject = sub;
+            setView('practiceSetup');
+        }
+
         function renderDashboard() {
             const u = state.user;
+            const first = (u.name || '').trim().split(/\s+/)[0] || 'there';
+            const hello = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+            const totalQs = englishExamSize() + 120;
+            const h = state.history;
+            const ph = state.practiceHistory || [];
+            const card = 'bg-white border border-[#e8e2d2] rounded-2xl';
+            const ts = x => (x.startedAt && x.startedAt.toMillis ? x.startedAt.toMillis() : 0);
+
+            // ----- progress numbers -----
+            let statsHtml = `<div class="${card} p-4 text-sm text-[#0b3d2b]/60">Loading your progress…</div>`;
+            let subjectHtml = '';
+            if (h !== null) {
+                const pTotal = ph.reduce((a, x) => a + (x.totalQuestions || 0), 0);
+                const pRight = ph.reduce((a, x) => a + (x.rawScore || 0), 0);
+                const avg = h.length ? Math.round(h.reduce((a, x) => a + x.scaledScore, 0) / h.length) : '–';
+                const best = h.length ? Math.max(...h.map(x => x.scaledScore)) : '–';
+                const stat = (label, val, sub) => `<div class="${card} p-4"><p class="font-display font-bold text-2xl">${val}</p><p class="text-xs text-[#0b3d2b]/60 mt-0.5">${label}</p>${sub ? `<p class="text-[11px] text-[#0b5a3c] mt-1">${sub}</p>` : ''}</div>`;
+                statsHtml = `<div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    ${stat('Full exams taken', h.length)}
+                    ${stat('Average score', avg === '–' ? '–' : avg + ' / 400')}
+                    ${stat('Best score', best === '–' ? '–' : best + ' / 400')}
+                    ${stat('Practice sessions', ph.length, ph.length && pTotal ? Math.round(pRight / pTotal * 100) + '% correct on average' : '')}
+                </div>`;
+
+                const subj = {};
+                h.forEach(x => Object.entries(x.breakdown || {}).forEach(([k, v]) => {
+                    const o = subj[k] = subj[k] || { c: 0, t: 0, best: 0 };
+                    o.c += v.score; o.t += v.total;
+                    if (v.total) o.best = Math.max(o.best, Math.round(v.score / v.total * 100));
+                }));
+                subjectHtml = Object.keys(subj).length ? `
+                    <h2 class="font-display font-bold text-xl mt-10 mb-3">Progress by subject</h2>
+                    <div class="${card} p-5 space-y-4">
+                        ${Object.entries(subj).map(([k, v]) => {
+                            const pct = v.t ? Math.round(v.c / v.t * 100) : 0;
+                            return `<div>
+                                <div class="flex justify-between text-sm"><span class="font-medium">${esc(subjLabel(k))}</span><span class="text-[#0b3d2b]/60 text-xs">avg ${pct}% · best ${v.best}%</span></div>
+                                <div class="h-2 bg-[#e8f0ea] rounded-full mt-1.5"><div class="h-2 bg-[#066c43] rounded-full" style="width:${pct}%"></div></div>
+                            </div>`;
+                        }).join('')}
+                    </div>` : '';
+            }
+
+            // ----- recent activity -----
+            const activity = h === null ? [] : [
+                ...h.map(x => ({ ...x, kind: 'exam' })),
+                ...ph.map(x => ({ ...x, kind: 'practice' }))
+            ].sort((a, b) => ts(b) - ts(a)).slice(0, 10);
+            const activityHtml = h === null ? '' : `
+                <h2 class="font-display font-bold text-xl mt-10 mb-3">Recent activity</h2>
+                <div class="${card} overflow-hidden">
+                    ${activity.length === 0 ? `<p class="p-5 text-sm text-[#0b3d2b]/60">Nothing here yet. Your exams and practice sessions will show up here, and you can review the answers of every full exam.</p>` :
+                    activity.map((x, i) => {
+                        const raw = x.rawScore !== undefined ? x.rawScore : null;
+                        const tot = x.totalQuestions || null;
+                        const pct = raw !== null && tot ? Math.round(raw / tot * 100) : (x.scaledScore !== undefined ? Math.round(x.scaledScore / 4) : 0);
+                        const title = x.kind === 'exam' ? 'Full CBT exam' : 'Practice · ' + subjLabel((x.subjects && x.subjects[0]) || x.subject || '');
+                        return `<div class="flex items-center justify-between gap-3 px-5 py-3.5 ${i ? 'border-t border-[#efe9d9]' : ''}">
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold truncate">${esc(title)}</p>
+                                <p class="text-xs text-[#0b3d2b]/55">${esc(fmtTime(x.startedAt))}</p>
+                                ${x.kind === 'exam' ? `<button onclick="reviewPast('${x.id}')" class="text-xs font-semibold text-[#0b5a3c] hover:underline mt-1">Review answers →</button>` : ''}
+                            </div>
+                            <div class="text-right shrink-0">
+                                <p class="font-display font-bold text-lg text-[#066c43]">${pct}%</p>
+                                <p class="text-[11px] text-[#0b3d2b]/55">${raw !== null && tot ? raw + '/' + tot : ''}${x.kind === 'exam' && x.scaledScore !== undefined ? ' · ' + x.scaledScore + '/400' : ''}</p>
+                            </div>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+
+            // ----- practice subject cards -----
+            const subjectCards = u.subjects.map(sub => {
+                const meta = sub === 'english' ? availableFor('english') + ' questions' : 'Sample questions';
+                return `<button onclick="practiceSubject('${sub}')" class="${card} p-4 text-left hover:border-[#0b5a3c] transition">
+                    <p class="text-[10px] font-semibold tracking-wider text-[#0b5a3c] uppercase">Practice</p>
+                    <p class="font-display font-bold mt-0.5">${esc(subjLabel(sub))}</p>
+                    <div class="flex items-center justify-between mt-3 text-xs text-[#0b3d2b]/55">
+                        <span>${meta} · no time limit</span>
+                        <span class="w-6 h-6 rounded-full border border-[#0b5a3c] text-[#0b5a3c] flex items-center justify-center text-[9px]">▶</span>
+                    </div>
+                </button>`;
+            }).join('');
+
             return `
-                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-slate-950">
-                    <div class="max-w-xl w-full bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center shadow-xl">
-                        <div class="w-16 h-16 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded-2xl flex items-center justify-center mx-auto text-2xl font-bold mb-4">
-                            ${esc(u.name.charAt(0).toUpperCase())}
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="sticky top-0 z-20 bg-white border-b border-[#e8e2d2]">
+                        <div class="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-lg bg-[#066c43] text-white flex items-center justify-center text-sm">🎓</div>
+                                <div class="leading-tight">
+                                    <p class="font-display font-bold text-xs">GENIUS TUTOR</p>
+                                    <p class="text-[9px] font-semibold tracking-[0.2em] text-[#b88700]">JAMB CBT</p>
+                                </div>
+                            </div>
+                            <nav class="flex items-center gap-1 text-xs font-medium">
+                                <span class="px-3 py-1.5 rounded-lg bg-[#dcefe2] text-[#0b3d2b]">Dashboard</span>
+                                ${state.isAdmin ? `<button onclick="openAdmin()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Admin</button>` : ''}
+                                <button onclick="handleLogout()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Sign out</button>
+                            </nav>
                         </div>
-                        <h2 class="text-2xl font-bold text-white">Ready, ${esc(u.name)}?</h2>
-                        <p class="text-slate-400 text-xs mt-1">Verified email: <span class="text-indigo-400">${esc(u.email)}</span></p>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 my-6 text-left">
-                            <span class="text-xs text-slate-500 uppercase font-semibold">Your subjects (${englishExamSize() + 120} questions)</span>
-                            <div class="flex flex-wrap gap-2 mt-2">
-                                ${u.subjects.map(s => `<span class="px-3 py-1 bg-indigo-950 text-indigo-300 border border-indigo-500/30 rounded-lg text-xs font-bold uppercase">${esc(s)} (${s === 'english' ? englishExamSize() : '40'} Qs)</span>`).join('')}
+                    </header>
+
+                    <main class="flex-1 max-w-5xl mx-auto w-full px-4 py-6">
+                        <h1 class="font-display font-extrabold text-3xl">Hello, ${esc(hello)} 👋</h1>
+                        <p class="text-sm text-[#0b3d2b]/65 mt-1">Sit a full exam, or practise one subject at your own pace.</p>
+
+                        <div class="grid md:grid-cols-2 gap-4 mt-6">
+                            <div class="rounded-2xl p-6 bg-gradient-to-br from-[#00301f] via-[#05452d] to-[#0a5a3c] text-white flex flex-col">
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">FULL CBT EXAM</span>
+                                <h2 class="font-display font-bold text-2xl mt-3">Sit the full exam</h2>
+                                <p class="text-sm text-white/75 mt-1.5 leading-relaxed">All 4 subjects · ${totalQs} questions · 2 hours. The clock is kept by the server and your paper submits automatically when time is up.</p>
+                                <div class="flex flex-wrap gap-1.5 mt-4">
+                                    ${u.subjects.map(sub => `<span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">${esc(subjLabel(sub))}</span>`).join('')}
+                                </div>
+                                <button onclick="startExamSession()" class="mt-5 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>
+                            </div>
+                            <div class="${card} p-6 flex flex-col">
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">PRACTICE MODE</span>
+                                <h2 class="font-display font-bold text-2xl mt-3">Practise at your own pace</h2>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick one subject and 10, 20 or 40 questions. No time limit, and you see the correct answer after every question.</p>
+                                <button onclick="openPractice()" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">✏️ Start practice</button>
                             </div>
                         </div>
-                        <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 text-left text-xs text-amber-300 mb-6 leading-relaxed">
-                            ⚠️ <strong>Full exam:</strong> You have 2 hours (120 minutes) to complete all 4 subjects, and you can switch between subjects with the tabs. Not ready for that? Use Practice mode.
-                        </div>
-                        ${renderProgress()}
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <button onclick="openPractice()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">✏️ Practice mode</button>
-                            <button onclick="startExamSession()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition">Begin full exam 🚀</button>
-                        </div>
-                        <p class="text-[11px] text-slate-500 mt-3 leading-relaxed">Practice: one subject, no time limit, answers shown as you go. Full exam: all 4 subjects in 2 hours.</p>
-                        <button onclick="handleLogout()" class="mt-4 text-xs text-slate-400 hover:text-slate-200">Logout</button>
-                        ${state.isAdmin ? `<button onclick="openAdmin()" class="mt-4 text-xs text-slate-400 hover:text-slate-200">🔒 Tutor / Admin dashboard</button>` : ''}
-                    </div>
+
+                        <h2 class="font-display font-bold text-xl mt-10 mb-3">Practise a subject</h2>
+                        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">${subjectCards}</div>
+
+                        <h2 class="font-display font-bold text-xl mt-10 mb-3">Your progress</h2>
+                        ${statsHtml}
+                        ${subjectHtml}
+                        ${activityHtml}
+                    </main>
+
+                    <footer class="max-w-5xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
+                        <span>© 2026 Genius Tutor JAMB CBT. Practice platform for UTME preparation.</span>
+                        <span>Not affiliated with JAMB.</span>
+                    </footer>
                 </div>`;
         }
 
@@ -754,44 +898,6 @@
                 console.error('Could not load history', err);
                 state.history = [];
             }
-        }
-
-        function renderProgress() {
-            const h = state.history;
-            const box = 'bg-slate-950 p-4 rounded-xl border border-slate-800 mb-6 text-left';
-            if (h === null) return `<div class="${box} text-xs text-slate-500">Loading your progress…</div>`;
-            const ph = state.practiceHistory || [];
-            const pTotal = ph.reduce((a, x) => a + (x.totalQuestions || 0), 0);
-            const pRight = ph.reduce((a, x) => a + (x.rawScore || 0), 0);
-            const practiceLine = ph.length ? `<p class="text-xs text-slate-300 mt-4 pt-3 border-t border-slate-800">✏️ Practice: ${ph.length} session${ph.length > 1 ? 's' : ''} · average ${pTotal ? Math.round(pRight / pTotal * 100) : 0}% correct</p>` : '';
-            if (!h.length) return `<div class="${box} text-xs text-slate-400 leading-relaxed">Your scores, subject averages and answer reviews will appear here after you finish your first full exam.${practiceLine}</div>`;
-            const avg = Math.round(h.reduce((a, x) => a + x.scaledScore, 0) / h.length);
-            const best = Math.max(...h.map(x => x.scaledScore));
-            const subj = {};
-            h.forEach(x => Object.entries(x.breakdown || {}).forEach(([k, v]) => {
-                subj[k] = subj[k] || { c: 0, t: 0 };
-                subj[k].c += v.score; subj[k].t += v.total;
-            }));
-            const stat = (label, val) => `<div class="bg-slate-900 border border-slate-800 rounded-lg p-2"><p class="text-lg font-bold text-white">${val}</p><p class="text-[10px] text-slate-500 uppercase font-semibold">${label}</p></div>`;
-            return `
-                <div class="${box}">
-                    <span class="text-xs text-slate-500 uppercase font-semibold">Your progress</span>
-                    <div class="grid grid-cols-3 gap-2 mt-3 text-center">
-                        ${stat('Attempts', h.length)}${stat('Average / 400', avg)}${stat('Best / 400', best)}
-                    </div>
-                    <p class="text-[11px] text-slate-500 uppercase font-semibold mt-4 mb-2">Average score by subject</p>
-                    ${Object.entries(subj).map(([k, v]) => {
-                        const pct = v.t ? Math.round(v.c / v.t * 100) : 0;
-                        return `<div class="mb-2"><div class="flex justify-between text-xs text-slate-300 uppercase"><span>${esc(k)}</span><span>${pct}%</span></div><div class="h-1.5 bg-slate-800 rounded-full mt-1"><div class="h-1.5 bg-indigo-500 rounded-full" style="width:${pct}%"></div></div></div>`;
-                    }).join('')}
-                    ${practiceLine}
-                    <p class="text-[11px] text-slate-500 uppercase font-semibold mt-4 mb-1">Recent attempts</p>
-                    ${h.slice(0, 5).map(x => `
-                        <div class="flex items-center justify-between py-2 border-t border-slate-800 text-xs">
-                            <div><p class="text-slate-200 font-semibold">${x.scaledScore} / 400</p><p class="text-slate-500">${esc(fmtTime(x.startedAt))}</p></div>
-                            <button onclick="reviewPast('${x.id}')" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-1.5 rounded-lg transition">Review answers</button>
-                        </div>`).join('')}
-                </div>`;
         }
 
         function startReview() {
@@ -1141,7 +1247,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            openPractice, setPSubject, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
+            openPractice, practiceSubject, setPSubject, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
         });
 
         render();
