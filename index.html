@@ -36,7 +36,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
         import {
             getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
-            sendEmailVerification, sendPasswordResetEmail, signOut
+            sendEmailVerification, sendPasswordResetEmail, signOut,
+            applyActionCode, verifyPasswordResetCode, confirmPasswordReset
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
         import {
             getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, getDocs, collection,
@@ -220,7 +221,7 @@
             const app = document.getElementById('app');
             const views = {
                 loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister,
-                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
+                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
             };
             app.innerHTML = (views[state.currentView] || renderLoading)();
             if (state.currentView === 'exam') updateTimerDisplay();
@@ -1563,6 +1564,98 @@
                 </div>`;
         }
 
+        // --- EMAIL LINKS (verify email / reset password) handled on our own address ---
+        function clearActionUrl() { try { history.replaceState(null, '', location.pathname); } catch (_) {} }
+
+        async function runAction() {
+            const A = state.action;
+            try {
+                if (A.mode === 'verifyEmail') {
+                    await applyActionCode(auth, A.code);
+                    A.status = 'done';
+                    A.msg = 'Your email has been verified. You can now sign in.';
+                    clearActionUrl();
+                } else if (A.mode === 'resetPassword') {
+                    A.email = await verifyPasswordResetCode(auth, A.code);
+                    A.status = 'form';
+                } else {
+                    A.status = 'error';
+                    A.msg = 'This link is not supported.';
+                }
+            } catch (err) {
+                console.error(err);
+                A.status = 'error';
+                A.msg = A.mode === 'verifyEmail'
+                    ? 'This link has expired or was already used. If you already verified, just sign in. If not, try signing in and we will send you a new link.'
+                    : 'This reset link has expired or was already used. Go to sign in and tap Forgot password to get a new one.';
+            }
+            if (state.currentView === 'action') render();
+        }
+
+        async function handleNewPassword(e) {
+            e.preventDefault();
+            const A = state.action;
+            const pw = document.getElementById('newPassword').value;
+            const btn = document.getElementById('newpw-btn');
+            const errEl = document.getElementById('newpw-error');
+            errEl.textContent = '';
+            btn.disabled = true; btn.textContent = 'Saving…';
+            try {
+                await confirmPasswordReset(auth, A.code, pw);
+                A.status = 'done';
+                A.msg = 'Your password has been changed. Sign in with your new password.';
+                clearActionUrl();
+                render();
+            } catch (err) {
+                errEl.textContent = friendlyError(err);
+                btn.disabled = false; btn.textContent = 'Save new password';
+            }
+        }
+
+        function goToLogin() { clearActionUrl(); state.action = null; setView('login'); }
+
+        function renderAction() {
+            const A = state.action || { status: 'error', msg: 'Something went wrong.' };
+            let body;
+            if (A.status === 'working') {
+                body = `<h1 class="font-display font-bold text-xl mt-1">${A.mode === 'resetPassword' ? 'Checking your link…' : 'Verifying your email…'}</h1><p class="text-sm text-[#0b3d2b]/60 mt-3">Please wait a moment.</p>`;
+            } else if (A.status === 'form') {
+                body = `<h1 class="font-display font-bold text-xl mt-1">Choose a new password</h1>
+                    <p class="text-xs text-[#0b3d2b]/60 mt-1 break-all">For ${esc(A.email || '')}</p>
+                    <form onsubmit="handleNewPassword(event)" class="mt-5 space-y-4">
+                        <div>
+                            <label for="newPassword" class="block text-xs font-medium mb-1.5">New password</label>
+                            <input type="password" id="newPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls}">
+                        </div>
+                        <p id="newpw-error" class="text-xs text-red-600 min-h-[1rem]"></p>
+                        <button type="submit" id="newpw-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Save new password</button>
+                    </form>`;
+            } else if (A.status === 'done') {
+                body = `<div class="text-3xl">✅</div><h1 class="font-display font-bold text-xl mt-2">Done</h1>
+                    <p class="text-sm text-[#0b3d2b]/70 mt-2 leading-relaxed">${esc(A.msg)}</p>
+                    <button onclick="goToLogin()" class="w-full mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Go to sign in</button>`;
+            } else {
+                body = `<div class="text-3xl">⚠️</div><h1 class="font-display font-bold text-xl mt-2">Link problem</h1>
+                    <p class="text-sm text-[#0b3d2b]/70 mt-2 leading-relaxed">${esc(A.msg)}</p>
+                    <button onclick="goToLogin()" class="w-full mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Go to sign in</button>`;
+            }
+            return `
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="bg-gradient-to-b from-[#0b6b45] to-[#00170f] px-4 sm:px-8 py-3">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
+                            <div class="leading-tight text-white">
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                            </div>
+                        </div>
+                    </header>
+                    <main class="flex-1 px-4 pt-8 sm:pt-16 pb-10">
+                        <div class="max-w-sm sm:max-w-md mx-auto bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-sm">${body}</div>
+                    </main>
+                </div>`;
+        }
+
         // --- AUTO SIGN-OUT: students must sign in again after being away for 3 minutes ---
         const AWAY_LIMIT_MS = 3 * 60 * 1000;
         const AWAY_NOTICE = 'You were signed out because you were away for more than 3 minutes. Please sign in again.';
@@ -1603,10 +1696,22 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            openPractice, openExamSetup, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, openPractice, openExamSetup, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
         });
 
-        render();
+        // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
+        (function () {
+            const q = new URLSearchParams(location.search);
+            const mode = q.get('mode'), code = q.get('oobCode');
+            if (mode && code) {
+                state.action = { mode, code, status: 'working', msg: '', email: '' };
+                state.currentView = 'action';
+                render();
+                runAction();
+                return;
+            }
+            render();
+        })();
     </script>
 </body>
 </html>
