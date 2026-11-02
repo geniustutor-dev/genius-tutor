@@ -40,6 +40,7 @@
     <script src="biology.js"></script>
     <script src="chemistry.js"></script>
     <script src="physics.js"></script>
+    <script src="mathematics.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
         import {
@@ -109,7 +110,7 @@
 
         // Real question banks loaded from separate files.
         // Rows look like: [question, CORRECT answer, wrong1, wrong2, wrong3]
-        const REAL_BANKS = { biology: window.BIOLOGY, chemistry: window.CHEMISTRY, physics: window.PHYSICS };
+        const REAL_BANKS = { biology: window.BIOLOGY, chemistry: window.CHEMISTRY, physics: window.PHYSICS, mathematics: window.MATHEMATICS };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
         function shuffleArr(a) {
@@ -761,6 +762,7 @@
         const YEAR_DAYS = 365;
         const WA_NUMBER = '2349122866764';
         const PASS_PRICE = '₦2,000';
+        const HELPDESK_LINK = 'https://chat.whatsapp.com/HAv3RWHxSme2OYrog2HNBf?s=cl&p=a&iam=2';
 
         function hasActivePass() {
             if (state.isAdmin) return true;
@@ -1022,10 +1024,13 @@
                                 </div>
                                 ${examAccessHtml()}
                             </div>
-                            <div class="${card} p-6 flex flex-col">
-                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#0b5a3c] bg-[#e1f3e8] rounded-full px-3 py-1">WAEC/NECO/GCE MODE</span>
+                            <div class="rounded-2xl p-6 bg-gradient-to-br from-[#00301f] via-[#05452d] to-[#0a5a3c] text-white flex flex-col">
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">WAEC/NECO/GCE MODE</span>
                                 <h2 class="font-display font-bold text-2xl mt-3">Sit a WAEC/NECO/GCE paper</h2>
-                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">One subject you choose · ${WAEC_QS} questions · ${WAEC_MINUTES} minutes. Answers are shown only after you submit, with your score and a WAEC/NECO/GCE-style grade.</p>
+                                <p class="text-sm text-white/75 mt-1.5 leading-relaxed">One subject you choose · ${WAEC_QS} questions · ${WAEC_MINUTES} minutes. Answers are shown only after you submit, with your score and a WAEC/NECO/GCE-style grade.</p>
+                                <div class="flex flex-wrap gap-1.5 mt-4">
+                                    <span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">One subject you choose</span><span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">Grades A1 to F9</span>
+                                </div>
                                 ${waecAccessHtml()}
                             </div>
                             <div class="${card} p-6 flex flex-col">
@@ -1041,6 +1046,15 @@
                                 ${practiceGateHtml('openWaecPractice()', '✏️ Start WAEC/NECO/GCE practice')}
                             </div>
                         </div>
+
+                        ${hasActivePass() ? `<a href="${HELPDESK_LINK}" target="_blank" rel="noopener" class="mt-4 flex items-center gap-4 ${card} p-4 hover:border-[#25a244] transition">
+                            <span class="w-11 h-11 shrink-0 rounded-xl bg-[#e3f6e8] text-[#25a244] flex items-center justify-center text-xl">💬</span>
+                            <span class="flex-1 min-w-0">
+                                <span class="block font-display font-bold text-base">Join GENIUS TUTOR CBT HELP DESK</span>
+                                <span class="block text-xs text-[#0b3d2b]/60 mt-0.5 leading-relaxed">Our WhatsApp group for help, updates and tips.</span>
+                            </span>
+                            <span class="shrink-0 text-xs font-semibold bg-[#25a244] text-white rounded-lg px-3 py-2">Join</span>
+                        </a>` : ''}
 
                         ${leaderboardHtml}
 
@@ -1931,14 +1945,12 @@
 
         function waecAccessHtml() {
             const P = state.pass;
-            const u = state.user;
-            if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
-            if (P === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
-            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
-            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-year pass (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
+            if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-4 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
+            if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-year pass (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
-                    <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
 
