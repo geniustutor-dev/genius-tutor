@@ -271,6 +271,73 @@
             state.isAdmin = adminSnap.exists();
         }
 
+        // --- INSTALL AS APP POPUP (home page only) ---
+        let deferredInstall = null;
+        let installTimerDone = false;
+        const INSTALL_SNOOZE_MS = 3 * 86400000;   // after "Not now", wait 3 days before asking again
+        function installStore(get, val) {
+            try { return get ? localStorage.getItem('gt_install_snooze') : localStorage.setItem('gt_install_snooze', String(val)); } catch (_) { return null; }
+        }
+        function isStandalone() {
+            return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+        }
+        function isIOS() {
+            return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+        function isMobileUA() { return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent) || isIOS(); }
+        function installSnoozed() {
+            const t = Number(installStore(true));
+            return t && Date.now() - t < INSTALL_SNOOZE_MS;
+        }
+        function closeInstallPopup(snooze) {
+            const el = document.getElementById('install-popup');
+            if (el) el.remove();
+            if (snooze) installStore(false, Date.now());
+        }
+        function updateInstallPopup() {
+            const existing = document.getElementById('install-popup');
+            if (state.currentView !== 'home' || isStandalone() || installSnoozed() || !installTimerDone) { if (existing) existing.remove(); return; }
+            let body;
+            if (deferredInstall) body = 'Add Genius Tutor CBT to your home screen for quick access, just like a normal app.';
+            else if (isIOS()) body = 'Tap the <strong>Share</strong> button at the bottom of Safari, then choose <strong>Add to Home Screen</strong>.';
+            else if (isMobileUA()) body = 'Tap the <strong>⋮ menu</strong> in your browser, then choose <strong>Install app</strong> or <strong>Add to Home screen</strong>.';
+            else { if (existing) existing.remove(); return; }
+            const key = (deferredInstall ? 'a' : 'b') + (isIOS() ? 'i' : 'n');
+            if (existing && existing.dataset.key === key) return;
+            if (existing) existing.remove();
+            const el = document.createElement('div');
+            el.id = 'install-popup';
+            el.dataset.key = key;
+            el.className = 'fixed inset-x-0 bottom-0 z-[100] p-3 sm:p-5 flex justify-center';
+            el.innerHTML = `
+                <div class="w-full max-w-md bg-white text-[#0b3d2b] border border-[#e8e2d2] rounded-2xl shadow-2xl p-4">
+                    <div class="flex items-start gap-3">
+                        <img src="icon-192.png" alt="" class="w-12 h-12 rounded-xl shrink-0">
+                        <div class="flex-1">
+                            <p class="font-display font-bold text-base leading-tight">Install Genius Tutor CBT</p>
+                            <p class="text-sm text-[#0b3d2b]/70 mt-1 leading-relaxed">${body}</p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-3 justify-end">
+                        <button id="install-later" class="text-sm font-semibold text-[#0b3d2b]/70 px-4 py-2.5 rounded-xl hover:bg-[#f2efe4] transition">${deferredInstall ? 'Not now' : 'Got it'}</button>
+                        ${deferredInstall ? '<button id="install-now" class="text-sm font-semibold bg-[#066c43] hover:bg-[#055a37] text-white px-5 py-2.5 rounded-xl transition">Install app</button>' : ''}
+                    </div>
+                </div>`;
+            document.body.appendChild(el);
+            document.getElementById('install-later').onclick = () => closeInstallPopup(true);
+            const now = document.getElementById('install-now');
+            if (now) now.onclick = async () => {
+                const ev = deferredInstall;
+                deferredInstall = null;
+                closeInstallPopup(false);
+                if (!ev) return;
+                try { ev.prompt(); await ev.userChoice; } catch (_) {}
+            };
+        }
+        window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; updateInstallPopup(); });
+        window.addEventListener('appinstalled', () => { deferredInstall = null; closeInstallPopup(false); });
+        setTimeout(() => { installTimerDone = true; updateInstallPopup(); }, 2500);
+
         // --- RENDER ROUTER ---
         function render() {
             const app = document.getElementById('app');
@@ -282,6 +349,7 @@
             if (state.currentView === 'exam') updateTimerDisplay();
             if (state.currentView === 'practice') updatePracticeTimer();
             if (state.currentView === 'waec') updateWaecTimer();
+            updateInstallPopup();
         }
 
         function setView(v, notice = '') { state.currentView = v; state.notice = notice; render(); }
