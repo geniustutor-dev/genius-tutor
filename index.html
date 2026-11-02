@@ -3,7 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Genius Tutor JAMB CBT: UTME practice</title>
+    <title>Genius Tutor CBT: UTME practice</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#066c43">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Genius Tutor">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" href="icon-192.png">
     <link rel="preload" as="image" href="hero.jpg" fetchpriority="high">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +48,7 @@
             applyActionCode, verifyPasswordResetCode, confirmPasswordReset
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
         import {
-            getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, getDocs, collection,
+            getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, Timestamp, getDocs, collection,
             query, orderBy, limit, where, serverTimestamp, getCountFromServer
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
@@ -76,16 +84,28 @@
             }
             return bank;
         }
-        const questionBank = {
-            english: generateSubjectBank("Use of English", 125),
-            chemistry: generateSubjectBank("Chemistry", 125),
-            physics: generateSubjectBank("Physics", 125),
-            biology: generateSubjectBank("Biology", 125),
-            mathematics: generateSubjectBank("Mathematics", 125),
-            economics: generateSubjectBank("Economics", 125),
-            government: generateSubjectBank("Government", 125),
-            literature: generateSubjectBank("Literature in English", 125)
-        };
+        // --- SUBJECT LIST (id, label). Ids of existing subjects are kept so saved data still works. ---
+        const SUBJECT_DEFS = [
+            ['mathematics', 'General Mathematics'],
+            ['citizenship', 'Citizenship and Heritage Studies'],
+            ['digital', 'Digital Technologies'],
+            ['biology', 'Biology'],
+            ['chemistry', 'Chemistry'],
+            ['physics', 'Physics'],
+            ['agriculture', 'Agriculture'],
+            ['furthermaths', 'Further Mathematics'],
+            ['government', 'Government'],
+            ['irs', 'Islamic Religious Studies'],
+            ['literature', 'Literature in English'],
+            ['accounting', 'Accounting'],
+            ['commerce', 'Commerce'],
+            ['marketing', 'Marketing'],
+            ['economics', 'Economics'],
+            ['livestock', 'Livestock Farming']
+        ];
+        const SUBJECT_LABELS = Object.fromEntries([['english', 'English Language'], ...SUBJECT_DEFS]);
+        const questionBank = { english: generateSubjectBank("English Language", 125) };
+        SUBJECT_DEFS.forEach(([id, label]) => { questionBank[id] = generateSubjectBank(label, 125); });
 
         // Real question banks loaded from separate files.
         // Rows look like: [question, CORRECT answer, wrong1, wrong2, wrong3]
@@ -148,7 +168,13 @@
             examSubjects: [],
             pickMsg: '',
             leaderboard: null,
+            pass: null,
+            adminFilter: '',
             practice: null,
+            wsetup: { subject: 'english' },
+            wpsetup: { subject: 'english', count: 20 },
+            waec: null,
+            waecHistory: [],
             review: null,
             adminData: { users: [], sessions: [] },
             notice: ''
@@ -184,6 +210,34 @@
             return map[err.code] || err.message || 'Something went wrong.';
         }
 
+        // --- DUPLICATE NAME CHECK ---
+        // The name is simplified (case, accents, punctuation, word order and single letters are ignored),
+        // then hashed, so "ADE  Tunde", "Tunde Ade" and "Tunde O. Ade" all give the same key.
+        async function nameKey(name) {
+            const words = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+                .split(/[^a-z]+/).filter(w => w.length > 1).sort();
+            const text = words.join(' ');
+            if (!text || !(window.crypto && crypto.subtle)) return '';
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+        async function nameAlreadyUsed(name) {
+            try {
+                const key = await nameKey(name);
+                if (!key) return false;
+                return (await getDoc(doc(db, 'nameKeys', key))).exists();
+            } catch (err) { console.error('Name check skipped', err); return false; }
+        }
+        async function saveNameKey(name, uid) {
+            try {
+                const key = await nameKey(name);
+                if (!key) return;
+                const ref = doc(db, 'nameKeys', key);
+                if ((await getDoc(ref)).exists()) return;
+                await setDoc(ref, { uid, createdAt: serverTimestamp() });
+            } catch (err) { console.error('Could not save name key', err); }
+        }
+
         // --- AUTH STATE ---
         onAuthStateChanged(auth, async (fbUser) => {
             if (registering) return;
@@ -212,6 +266,7 @@
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
             if (!snap.exists()) throw new Error('Profile not found. Please register again.');
             state.user = { uid: fbUser.uid, ...snap.data() };
+            saveNameKey(state.user.name, fbUser.uid);   // covers students who registered before the name check existed
             const adminSnap = await getDoc(doc(db, 'admins', fbUser.uid));
             state.isAdmin = adminSnap.exists();
         }
@@ -220,12 +275,13 @@
         function render() {
             const app = document.getElementById('app');
             const views = {
-                loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister,
-                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
+                loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister, pay: renderPay, locked: renderLocked,
+                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, waecSetup: renderWaecSetup, waecPracticeSetup: renderWaecPracticeSetup, waec: renderWaec, waecResult: renderWaecResult, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
             };
             app.innerHTML = (views[state.currentView] || renderLoading)();
             if (state.currentView === 'exam') updateTimerDisplay();
             if (state.currentView === 'practice') updatePracticeTimer();
+            if (state.currentView === 'waec') updateWaecTimer();
         }
 
         function setView(v, notice = '') { state.currentView = v; state.notice = notice; render(); }
@@ -259,7 +315,7 @@
                 ['check', 'Instant marking', 'Score, percentage and a correct/incorrect breakdown for every subject.'],
                 ['chart', 'Track progress', 'History and average score for every subject.']
             ];
-            const subjects = ['Use of English', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Economics', 'Government', 'Literature in English'];
+            const subjects = ['english', ...OTHER_SUBJECTS];
             return `
                 <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
                     <section class="bg-gradient-to-br from-[#00301f] via-[#05452d] to-[#0a5a3c] text-white">
@@ -268,8 +324,8 @@
                                 <div class="flex items-center gap-2.5">
                                     <div class="w-9 h-9 rounded-xl bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center text-lg">🎓</div>
                                     <div class="leading-tight">
-                                        <p class="font-display font-bold text-sm tracking-wide">GENIUS TUTOR</p>
-                                        <p class="text-[10px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                                        <p class="font-display font-bold text-sm tracking-wide">GENIUS TUTOR CBT</p>
+                                        <p class="text-[10px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
                                     </div>
                                 </div>
                                 <button onclick="setView('login')" class="text-xs font-semibold border border-white/30 hover:bg-white/10 rounded-lg px-4 py-2 transition">Sign in</button>
@@ -279,7 +335,7 @@
                                 <div>
                                     <span class="inline-block text-[11px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">UTME CBT PRACTICE</span>
                                     <h1 class="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] mt-4">Walk into your JAMB exam already used to the screen.</h1>
-                                    <p class="text-sm sm:text-base text-white/80 mt-5 max-w-md leading-relaxed">Sit a full timed CBT exam or practise one subject at your own pace, with a question palette just like the real hall, instant marking and a full answer review after every attempt.</p>
+                                    <p class="text-sm sm:text-base text-white/80 mt-5 max-w-md leading-relaxed">Take a full timed CBT exam, or practise at real exam speed in the subjects you choose. Enjoy a question palette like the real exam hall, instant marking and a complete answer review after every attempt.</p>
                                     <div class="flex flex-wrap gap-3 mt-7">
                                         <button onclick="setView('register')" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-6 py-3 transition">Create free account</button>
                                         <button onclick="setView('login')" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-6 py-3 transition">I already have an account</button>
@@ -311,13 +367,56 @@
                                 </div>`).join('')}
                         </div>
 
+                        <h2 class="font-display font-bold text-2xl mt-12">How it works</h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
+                            ${[
+                                ['1', 'Create your account', 'Register with your email, then tap the verification link we send you. Check your spam folder if you do not see it.'],
+                                ['2', 'Choose your subjects', 'English is compulsory. Pick any 3 other subjects for a full exam or a timed practice.'],
+                                ['3', 'Sit it and review', 'Answer like in the real hall, get your score straight away and go through every answer.']
+                            ].map(x => `
+                                <div class="bg-white border border-[#e8e2d2] rounded-2xl p-5">
+                                    <span class="w-8 h-8 rounded-full bg-[#066c43] text-white font-display font-bold flex items-center justify-center text-sm">${x[0]}</span>
+                                    <h3 class="font-display font-bold mt-3">${x[1]}</h3>
+                                    <p class="text-sm text-[#0b3d2b]/65 mt-1 leading-relaxed">${x[2]}</p>
+                                </div>`).join('')}
+                        </div>
+
                         <h2 class="font-display font-bold text-2xl mt-12">Subjects available</h2>
                         <div class="flex flex-wrap gap-2.5 mt-4">
-                            ${subjects.map(s => `<span class="text-sm bg-[#dcefe2] text-[#0b3d2b] rounded-full px-4 py-1.5">${s}</span>`).join('')}
+                            ${subjects.map(s => `<span class="text-sm bg-[#dcefe2] text-[#0b3d2b] rounded-full px-4 py-1.5">${esc(subjLabel(s))}${hasRealQuestions(s) ? '' : ' <span class="text-[10px] font-semibold text-[#8a6500] bg-[#f6ecc9] rounded-full px-2 py-0.5 ml-1">Coming soon</span>'}</span>`).join('')}
                         </div>
 
                         <div class="mt-10 bg-[#f6ecc9] border border-[#ecdca4] rounded-2xl p-4 text-sm text-[#5b4a12] leading-relaxed">
-                            🛡️ Genius Tutor JAMB CBT is an independent practice platform and is not affiliated with JAMB. Questions are clearly practice questions, not official past questions.
+                            🛡️ Genius Tutor CBT is an independent practice platform and is not affiliated with JAMB. Questions are clearly practice questions, not official past questions.
+                        </div>
+                    </section>
+
+                    <section class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-10">
+                        <h2 class="font-display font-bold text-2xl">Common questions</h2>
+                        <div class="mt-4 bg-white border border-[#e8e2d2] rounded-2xl overflow-hidden">
+                            ${[
+                                ['Is it free?', 'Creating an account is free, and so is practice (JAMB and WAEC/NECO/GCE) for your first 3 days. After that, you need a 1-year pass for ₦2,000 to keep signing in and using the app. One pass unlocks everything, including the full JAMB exam and WAEC/NECO/GCE papers. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your pass will be activated once the payment is confirmed.'],
+                                ['What is WAEC/NECO/GCE mode?', 'You pick one subject and sit a timed paper of 60 questions. Answers are shown only after you submit, together with your score and a WAEC/NECO/GCE-style grade.'],
+                                ['Are these real JAMB questions?', 'No. They are practice questions written for this app, not official JAMB past questions. This platform is independent and not affiliated with JAMB.'],
+                                ['Do I have to verify my email?', 'Yes. After you register we send a verification link. Tap it, then sign in. If you cannot see the email, check your spam folder.'],
+                                ['The verification link does not open. What do I do?', 'Try switching between mobile data and Wi-Fi, or turn off any VPN, then tap the link again. If it still fails, message me on WhatsApp below and I will help you.'],
+                                ['Which subjects can I choose?', 'English Language is compulsory. You pick any 3 other subjects for a full exam or a practice session.'],
+                                ['Is the practice timed?', 'Yes, at the same pace as the real exam, about 40 seconds per question. You see the correct answer after every question.']
+                            ].map((f, i) => `
+                                <details class="group ${i ? 'border-t border-[#efe9d9]' : ''}">
+                                    <summary class="flex items-center justify-between gap-3 cursor-pointer list-none px-5 py-4 text-sm font-semibold">
+                                        <span>${f[0]}</span><span class="text-[#0b5a3c] text-lg leading-none group-open:rotate-45 transition">+</span>
+                                    </summary>
+                                    <p class="px-5 pb-4 -mt-1 text-sm text-[#0b3d2b]/70 leading-relaxed">${f[1]}</p>
+                                </details>`).join('')}
+                        </div>
+
+                        <div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div>
+                                <h3 class="font-display font-bold">Know someone writing UTME?</h3>
+                                <p class="text-sm text-[#0b3d2b]/70 mt-0.5">Share Genius Tutor with your friends on WhatsApp.</p>
+                            </div>
+                            <a href="https://wa.me/?text=${encodeURIComponent('Practise for your JAMB UTME CBT with Genius Tutor: ' + (location.origin || ''))}" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition shrink-0">📲 Share on WhatsApp</a>
                         </div>
                     </section>
 
@@ -334,7 +433,7 @@
                     </section>
 
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
-                        <span>© 2026 Genius Tutor JAMB CBT. Practice platform for UTME preparation.</span>
+                        <span>© 2026 Genius Tutor CBT. Practice platform for UTME preparation.</span>
                         <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
@@ -349,15 +448,15 @@
                         <button onclick="setView('home')" class="flex items-center gap-2.5 text-left">
                             <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
                             <div class="leading-tight text-white">
-                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
-                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR CBT</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
                             </div>
                         </button>
                     </header>
 
                     <main class="flex-1 px-4 pt-8 sm:pt-16 pb-10">
                         <div class="max-w-sm sm:max-w-md mx-auto bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-sm">
-                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR JAMB CBT</p>
+                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR CBT</p>
                             <h1 class="font-display font-bold text-xl mt-1">Sign in to your account</h1>
 
                             ${state.notice ? `<div class="mt-4 text-xs bg-[#e7f3ec] border border-[#cfe5d8] text-[#0b3d2b] rounded-lg p-3 leading-relaxed">${esc(state.notice)}</div>` : ''}
@@ -381,6 +480,7 @@
                             <p class="text-center text-xs text-[#0b3d2b]/70 mt-5">New here? <button onclick="setView('register')" class="font-semibold text-[#0b5a3c] hover:underline">Create an account</button></p>
                             <p class="text-center mt-3"><button onclick="setView('home')" class="text-[11px] text-[#0b3d2b]/50 hover:text-[#0b3d2b]">← Back to home</button></p>
                         </div>
+                        <div class="max-w-sm sm:max-w-md mx-auto mt-5">${payBoxHtml()}</div>
                     </main>
                 </div>`;
         }
@@ -425,8 +525,8 @@
 
         // --- REGISTER ---
         function subjectOptions(selected) {
-            return ['chemistry','physics','biology','mathematics','economics','government','literature']
-                .map(s => `<option value="${s}" ${s === selected ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`).join('');
+            return SUBJECT_DEFS
+                .map(([id, label]) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${label}</option>`).join('');
         }
         const selectCls = "w-full mt-0.5 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]";
         const inputCls = "w-full bg-white border border-[#d9d4c3] rounded-lg px-3 py-2.5 text-sm text-[#0b3d2b] placeholder-[#9bb0a5] focus:outline-none focus:border-[#0b5a3c] focus:ring-1 focus:ring-[#0b5a3c]";
@@ -438,15 +538,15 @@
                         <button onclick="setView('home')" class="flex items-center gap-2.5 text-left">
                             <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
                             <div class="leading-tight text-white">
-                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
-                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR CBT</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
                             </div>
                         </button>
                     </header>
 
                     <main class="flex-1 px-4 pt-8 sm:pt-12 pb-10">
                         <div class="max-w-sm sm:max-w-md mx-auto bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-sm">
-                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR JAMB CBT</p>
+                            <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GENIUS TUTOR CBT</p>
                             <h1 class="font-display font-bold text-xl mt-1">Create your account</h1>
                             <p class="text-xs text-[#0b3d2b]/60 mt-1">A verification link will be emailed to you.</p>
 
@@ -456,27 +556,12 @@
                                     <input type="text" id="regFullName" required autocomplete="name" class="${inputCls}">
                                 </div>
                                 <div>
-                                    <label for="regNumberInput" class="block text-xs font-medium mb-1.5">JAMB registration number</label>
-                                    <input type="text" id="regNumberInput" required class="${inputCls}">
-                                </div>
-                                <div>
                                     <label for="regEmailInput" class="block text-xs font-medium mb-1.5">Email address</label>
                                     <input type="email" id="regEmailInput" required autocomplete="email" class="${inputCls}">
                                 </div>
                                 <div>
                                     <label for="regPassword" class="block text-xs font-medium mb-1.5">Password</label>
                                     <input type="password" id="regPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls}">
-                                </div>
-                                <div class="bg-[#faf8f2] p-3 rounded-xl border border-[#e8e2d2] space-y-2.5">
-                                    <p class="text-xs font-semibold text-[#0b5a3c] uppercase tracking-wider">Subject combination</p>
-                                    <p class="text-[11px] text-[#0b3d2b]/60 leading-relaxed">These are your default picks. You can change them before every exam or practice.</p>
-                                    <div>
-                                        <span class="text-[11px] text-[#0b3d2b]/60">1. Use of English (compulsory)</span>
-                                        <input type="text" disabled value="Use of English" class="w-full mt-0.5 bg-[#eef1ec] border border-[#e8e2d2] rounded-lg px-3 py-2 text-sm text-[#0b3d2b]/70">
-                                    </div>
-                                    <div><span class="text-[11px] text-[#0b3d2b]/60">2. Second subject</span><select id="regSub2" class="${selectCls}">${subjectOptions('chemistry')}</select></div>
-                                    <div><span class="text-[11px] text-[#0b3d2b]/60">3. Third subject</span><select id="regSub3" class="${selectCls}">${subjectOptions('physics')}</select></div>
-                                    <div><span class="text-[11px] text-[#0b3d2b]/60">4. Fourth subject</span><select id="regSub4" class="${selectCls}">${subjectOptions('biology')}</select></div>
                                 </div>
                                 <button type="submit" id="submit-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Create Account 📧</button>
                             </form>
@@ -491,23 +576,25 @@
         async function handleRegister(e) {
             e.preventDefault();
             const name = document.getElementById('regFullName').value.trim();
-            const regNumber = document.getElementById('regNumberInput').value.trim();
             const email = document.getElementById('regEmailInput').value.trim();
             const password = document.getElementById('regPassword').value;
-            const subs = ['regSub2','regSub3','regSub4'].map(id => document.getElementById(id).value);
-
-            if (new Set(subs).size !== 3) { alert('Please choose three different subjects.'); return; }
 
             const btn = document.getElementById('submit-btn');
-            btn.disabled = true; btn.textContent = 'Creating account…';
+            btn.disabled = true; btn.textContent = 'Checking…';
+            if (await nameAlreadyUsed(name)) {
+                setView('login', 'An account with this name already exists. Please sign in below. If you forgot your password, use "Forgot password". If you are a different person with the same name, go back to register and add your middle name.');
+                return;
+            }
+            btn.textContent = 'Creating account…';
             registering = true;
             try {
                 const cred = await createUserWithEmailAndPassword(auth, email, password);
                 await setDoc(doc(db, 'users', cred.user.uid), {
-                    name, regNumber, email,
-                    subjects: ['english', ...subs],
+                    name, email,
+                    subjects: ['english'],
                     createdAt: serverTimestamp()
                 });
+                await saveNameKey(name, cred.user.uid);
                 await sendEmailVerification(cred.user);
                 await signOut(auth);
                 registering = false;
@@ -521,11 +608,10 @@
 
         // --- DASHBOARD ---
         function subjLabel(sub) {
-            const m = { english: 'Use of English', literature: 'Literature in English' };
-            return m[sub] || (sub.charAt(0).toUpperCase() + sub.slice(1));
+            return SUBJECT_LABELS[sub] || (sub.charAt(0).toUpperCase() + sub.slice(1));
         }
 
-        const OTHER_SUBJECTS = ['chemistry', 'physics', 'biology', 'mathematics', 'economics', 'government', 'literature'];
+        const OTHER_SUBJECTS = SUBJECT_DEFS.map(d => d[0]);
         const PRACTICE_SECS_PER_Q = 40;   // same pace as the real exam: 180 questions in 120 minutes
         let practiceInterval = null;
 
@@ -537,7 +623,7 @@
         function defaultPicks() {
             const reg = ((state.user && state.user.subjects) || []).filter(s => OTHER_SUBJECTS.includes(s));
             const out = [...new Set(reg)].slice(0, 3);
-            for (const s of OTHER_SUBJECTS) { if (out.length >= 3) break; if (!out.includes(s)) out.push(s); }
+            for (const s of [...OTHER_SUBJECTS].sort((a, b) => hasRealQuestions(b) - hasRealQuestions(a))) { if (out.length >= 3) break; if (!out.includes(s)) out.push(s); }
             return out;
         }
 
@@ -568,7 +654,7 @@
             return `
                 <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Subjects: English + 3 of your choice</p>
                 <div class="p-3 rounded-xl border border-[#bfe0cd] bg-[#e1f3e8] text-sm font-semibold flex items-center justify-between">
-                    <span>Use of English</span><span class="text-[11px] font-semibold text-[#0b5a3c]">🔒 Compulsory</span>
+                    <span>English Language</span><span class="text-[11px] font-semibold text-[#0b5a3c]">🔒 Compulsory</span>
                 </div>
                 <div class="grid grid-cols-2 gap-2 mt-2">${OTHER_SUBJECTS.map(btn).join('')}</div>
                 <p class="text-xs mt-2 ${picks.length === 3 ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${picks.length} of 3 chosen${state.pickMsg ? ' · ' + esc(state.pickMsg) : ''}</p>`;
@@ -576,6 +662,7 @@
 
         // --- EXAM SETUP (choose subjects) ---
         function openExamSetup() {
+            if (!hasActivePass()) { alert('Full exams need an active pass.'); return; }
             if (state.esetup.subjects.length !== 3) state.esetup.subjects = defaultPicks();
             state.pickMsg = '';
             setView('examSetup');
@@ -599,6 +686,116 @@
                             <button onclick="startExamSession()" ${ready ? '' : 'disabled'} class="flex-[2] bg-[#066c43] hover:bg-[#055a37] text-white font-semibold py-3 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed">Begin exam 🚀</button>
                         </div>
                     </div>
+                </div>`;
+        }
+
+        // --- 1-YEAR PASS (full exams are paid; practice stays free) ---
+        const YEAR_DAYS = 365;
+        const WA_NUMBER = '2349122866764';
+        const PASS_PRICE = '₦2,000';
+
+        function hasActivePass() {
+            if (state.isAdmin) return true;
+            return !!(state.pass && state.pass.active && state.pass.expiresMs > Date.now());
+        }
+
+        async function loadPass() {
+            try {
+                const snap = await getDoc(doc(db, 'passes', state.user.uid));
+                const d = snap.exists() ? snap.data() : null;
+                const ms = d && d.expiresAt && d.expiresAt.toMillis ? d.expiresAt.toMillis() : 0;
+                state.pass = { expiresMs: ms, active: ms > Date.now(), error: false };
+            } catch (err) {
+                console.error('Could not check pass', err);
+                state.pass = { expiresMs: 0, active: false, error: true };
+            }
+        }
+
+        async function refreshPass() {
+            state.pass = null;
+            render();
+            await loadPass();
+            if (state.currentView === 'dashboard') render();
+        }
+
+        function fmtDate(ms) { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+
+        // --- PAYMENT DETAILS ---
+        const PAY_BANK = 'OPay';
+        const PAY_ACCOUNT_NO = '9122866764';
+        const PAY_ACCOUNT_NAME = 'HABEEB ABIODUN BABAJIDE';
+        function payWaUrl() {
+            const u = state.user;
+            const msg = u
+                ? 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year pass. Name: ' + u.name + '. Email: ' + u.email + '. My payment screenshot is attached.'
+                : 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year pass. My name: ____ . My email: ____ . My payment screenshot is attached.';
+            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(msg);
+        }
+        function copyAcct(btn) {
+            const done = () => { btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = 'Copy'; }, 1800); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(PAY_ACCOUNT_NO).then(done).catch(() => prompt('Copy the account number:', PAY_ACCOUNT_NO));
+            else prompt('Copy the account number:', PAY_ACCOUNT_NO);
+        }
+        function goPay() { setView('pay'); window.scrollTo(0, 0); }
+        function payBoxHtml() {
+            return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 shadow-sm text-[#0b3d2b]">
+                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GET YOUR 1-YEAR PASS</p>
+                <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} to unlock everything</h2>
+                <div class="mt-3 bg-[#e7f3ec] border border-[#cfe5d8] rounded-xl p-4">
+                    <p class="text-[11px] text-[#0b3d2b]/60">Bank</p>
+                    <p class="font-semibold text-sm">${esc(PAY_BANK)}</p>
+                    <p class="text-[11px] text-[#0b3d2b]/60 mt-2.5">Account number</p>
+                    <div class="flex items-center gap-3">
+                        <p class="font-display font-bold text-2xl tracking-wider">${esc(PAY_ACCOUNT_NO)}</p>
+                        <button onclick="copyAcct(this)" class="text-xs font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-3 py-1.5 transition">Copy</button>
+                    </div>
+                    <p class="text-[11px] text-[#0b3d2b]/60 mt-2.5">Account name</p>
+                    <p class="font-semibold text-sm">${esc(PAY_ACCOUNT_NAME)}</p>
+                </div>
+                <ol class="mt-4 space-y-2 text-sm leading-relaxed list-decimal list-inside">
+                    <li>Transfer <strong>${PASS_PRICE}</strong> to the account above.</li>
+                    <li>Take a <strong>screenshot</strong> of your payment.</li>
+                    <li>Tap the button below to open WhatsApp, then send the screenshot.</li>
+                    <li>Wait for confirmation. Once confirmed, your full access is activated.</li>
+                </ol>
+                <a href="${payWaUrl()}" target="_blank" rel="noopener" class="mt-4 block text-center bg-[#25a244] hover:bg-[#1f8a3a] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">I have paid: send screenshot on WhatsApp</a>
+            </div>`;
+        }
+        function renderPay() {
+            return `
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="bg-gradient-to-b from-[#0b6b45] to-[#00170f] px-4 sm:px-8 py-3">
+                        <div class="leading-tight text-white">
+                            <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR CBT</p>
+                            <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
+                        </div>
+                    </header>
+                    <main class="flex-1 px-4 pt-6 pb-10">
+                        <div class="max-w-sm sm:max-w-md mx-auto">
+                            ${payBoxHtml()}
+                            <div class="flex flex-wrap gap-2 mt-4">
+                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">My payment is confirmed, check again</button>
+                                <button onclick="showDashboard()" class="text-sm font-semibold text-[#0b5a3c] px-3 py-3 hover:underline">← Back to dashboard</button>
+                            </div>
+                        </div>
+                    </main>
+                </div>`;
+        }
+
+        function examAccessHtml() {
+            const P = state.pass;
+            const u = state.user;
+            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            if (hasActivePass()) {
+                const label = P && P.active ? 'Pass active until ' + fmtDate(P.expiresMs) : 'Admin access';
+                return `<p class="mt-4 text-xs font-semibold text-[#f4b731]">✓ ${esc(label)}</p>
+                    <button onclick="openExamSetup()" class="mt-3 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>`;
+            }
+            if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Full exams and WAEC/NECO/GCE papers need a 1-year pass (${PASS_PRICE}). One pass unlocks everything.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
 
@@ -693,7 +890,8 @@
             // ----- recent activity -----
             const activity = h === null ? [] : [
                 ...h.map(x => ({ ...x, kind: 'exam' })),
-                ...ph.map(x => ({ ...x, kind: 'practice' }))
+                ...ph.map(x => ({ ...x, kind: 'practice' })),
+                ...(state.waecHistory || []).map(x => ({ ...x, kind: 'waec' }))
             ].sort((a, b) => ts(b) - ts(a)).slice(0, 10);
             const activityHtml = h === null ? '' : `
                 <h2 class="font-display font-bold text-xl mt-10 mb-3">Recent activity</h2>
@@ -703,12 +901,12 @@
                         const raw = x.rawScore !== undefined ? x.rawScore : null;
                         const tot = x.totalQuestions || null;
                         const pct = raw !== null && tot ? Math.round(raw / tot * 100) : (x.scaledScore !== undefined ? Math.round(x.scaledScore / 4) : 0);
-                        const title = x.kind === 'exam' ? 'Full CBT exam' : 'Practice · ' + (x.subjects && x.subjects.length ? x.subjects.map(z => subjLabel(z)).join(', ') : subjLabel(x.subject || ''));
+                        const title = x.kind === 'exam' ? 'Full CBT exam' : (x.kind === 'waec' ? 'WAEC/NECO/GCE · ' + subjLabel((x.subjects && x.subjects[0]) || '') + (x.grade ? ' · ' + x.grade : '') : (x.style === 'waec' ? 'WAEC/NECO/GCE practice · ' : 'Practice · ') + (x.subjects && x.subjects.length ? x.subjects.map(z => subjLabel(z)).join(', ') : subjLabel(x.subject || '')));
                         return `<div class="flex items-center justify-between gap-3 px-5 py-3.5 ${i ? 'border-t border-[#efe9d9]' : ''}">
                             <div class="min-w-0">
                                 <p class="text-sm font-semibold truncate">${esc(title)}</p>
                                 <p class="text-xs text-[#0b3d2b]/55">${esc(fmtTime(x.startedAt))}</p>
-                                ${(x.kind === 'exam' || x.hasReview) ? `<button onclick="reviewPast('${x.id}')" class="text-xs font-semibold text-[#0b5a3c] hover:underline mt-1">Review answers →</button>` : ''}
+                                ${(x.kind === 'exam' || x.kind === 'waec' || x.hasReview) ? `<button onclick="reviewPast('${x.id}')" class="text-xs font-semibold text-[#0b5a3c] hover:underline mt-1">Review answers →</button>` : ''}
                             </div>
                             <div class="text-right shrink-0">
                                 <p class="font-display font-bold text-lg text-[#066c43]">${pct}%</p>
@@ -727,8 +925,8 @@
                             <div class="flex items-center gap-2">
                                 <div class="w-8 h-8 rounded-lg bg-[#066c43] text-white flex items-center justify-center text-sm">🎓</div>
                                 <div class="leading-tight">
-                                    <p class="font-display font-bold text-xs">GENIUS TUTOR</p>
-                                    <p class="text-[9px] font-semibold tracking-[0.2em] text-[#b88700]">JAMB CBT</p>
+                                    <p class="font-display font-bold text-xs">GENIUS TUTOR CBT</p>
+                                    <p class="text-[9px] font-semibold tracking-[0.2em] text-[#b88700]">UTME · WAEC · NECO · GCE</p>
                                 </div>
                             </div>
                             <nav class="flex items-center gap-1 text-xs font-medium">
@@ -741,8 +939,10 @@
 
                     <main class="flex-1 max-w-5xl xl:max-w-6xl mx-auto w-full px-4 py-6">
                         <h1 class="font-display font-extrabold text-3xl">Hello, ${esc(hello)} 👋</h1>
-                        <p class="text-sm text-[#0b3d2b]/65 mt-1">Sit a full exam, or practise at exam pace.</p>
+                        <p class="text-sm text-[#0b3d2b]/65 mt-1">Sit a full JAMB exam, a WAEC/NECO/GCE paper, or practise at exam pace.</p>
                         ${state.isAdmin && !window.ENGLISH ? `<div class="mt-4 text-sm bg-red-50 border border-red-200 text-red-800 rounded-xl p-3 leading-relaxed">⚠️ Admin notice: <strong>questions.js</strong> was not found, so English is showing placeholder questions. Upload questions.js to your GitHub repository next to index.html.</div>` : ''}
+
+                        ${trialBannerHtml()}
 
                         <div class="grid md:grid-cols-2 gap-4 mt-6">
                             <div class="rounded-2xl p-6 bg-gradient-to-br from-[#00301f] via-[#05452d] to-[#0a5a3c] text-white flex flex-col">
@@ -750,15 +950,27 @@
                                 <h2 class="font-display font-bold text-2xl mt-3">Sit the full exam</h2>
                                 <p class="text-sm text-white/75 mt-1.5 leading-relaxed">All 4 subjects · ${totalQs} questions · 2 hours. The clock is kept by the server and your paper submits automatically when time is up.</p>
                                 <div class="flex flex-wrap gap-1.5 mt-4">
-                                    <span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">Use of English</span><span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">+ 3 subjects you choose</span>
+                                    <span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">English Language</span><span class="text-[11px] bg-white/10 rounded-full px-2.5 py-1">+ 3 subjects you choose</span>
                                 </div>
-                                <button onclick="openExamSetup()" class="mt-5 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>
+                                ${examAccessHtml()}
                             </div>
                             <div class="${card} p-6 flex flex-col">
-                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">PRACTICE MODE</span>
-                                <h2 class="font-display font-bold text-2xl mt-3">Practise at your own pace</h2>
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#0b5a3c] bg-[#e1f3e8] rounded-full px-3 py-1">WAEC/NECO/GCE MODE</span>
+                                <h2 class="font-display font-bold text-2xl mt-3">Sit a WAEC/NECO/GCE paper</h2>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">One subject you choose · ${WAEC_QS} questions · ${WAEC_MINUTES} minutes. Answers are shown only after you submit, with your score and a WAEC/NECO/GCE-style grade.</p>
+                                ${waecAccessHtml()}
+                            </div>
+                            <div class="${card} p-6 flex flex-col">
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">JAMB PRACTICE</span>
+                                <h2 class="font-display font-bold text-2xl mt-3">Practise for JAMB</h2>
                                 <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick English plus 3 subjects and 5 to 40 questions each. Timed at exam pace, with the correct answer shown after every question and a full review at the end.</p>
-                                <button onclick="openPractice()" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">✏️ Start practice</button>
+                                ${practiceGateHtml('openPractice()', '✏️ Start practice')}
+                            </div>
+                            <div class="${card} p-6 flex flex-col">
+                                <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">WAEC/NECO/GCE PRACTICE</span>
+                                <h2 class="font-display font-bold text-2xl mt-3">Practise for WAEC/NECO/GCE</h2>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick one subject and 10 to 60 questions. Timed at WAEC/NECO/GCE pace, with the correct answer shown after every question and a full review at the end.</p>
+                                ${practiceGateHtml('openWaecPractice()', '✏️ Start WAEC/NECO/GCE practice')}
                             </div>
                         </div>
 
@@ -771,7 +983,7 @@
                     </main>
 
                     <footer class="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
-                        <span>© 2026 Genius Tutor JAMB CBT. Practice platform for UTME preparation.</span>
+                        <span>© 2026 Genius Tutor CBT. Practice platform for UTME preparation.</span>
                         <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
@@ -779,7 +991,7 @@
 
         async function handleLogout() {
             await signOut(auth);
-            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null;
+            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('home');
         }
 
@@ -787,6 +999,7 @@
             const u = state.user;
             const picks = state.esetup.subjects;
             if (picks.length !== 3) return;
+            if (!hasActivePass()) { alert('Full exams need an active pass.'); showDashboard(); return; }
             state.examSubjects = ['english', ...picks];
             state.examData = { english: buildEnglishExam() };
             picks.forEach(sub => { state.examData[sub] = getRandomQuestions(sub, 40); });
@@ -803,7 +1016,7 @@
 
             try {
                 const ref = await addDoc(collection(db, 'sessions'), {
-                    uid: u.uid, name: u.name, regNumber: u.regNumber,
+                    uid: u.uid, name: u.name, regNumber: u.regNumber || '',
                     subjects: state.examSubjects, status: 'In progress',
                     startedAt: serverTimestamp()
                 });
@@ -815,7 +1028,16 @@
                     state.serverOffset = startMs - Date.now();
                     state.deadline = startMs + 7200000;     // official end time = start + 2 hours
                 }
-            } catch (err) { console.error('Could not log session start', err); }
+            } catch (err) {
+                console.error('Could not log session start', err);
+                if (err && err.code === 'permission-denied') {
+                    state.pass = { expiresMs: 0, active: false, error: false };
+                    if (state.timerInterval) clearInterval(state.timerInterval);
+                    alert('Your pass is not active, so the exam cannot start.');
+                    showDashboard();
+                    return;
+                }
+            }
 
             setView('exam');
             startTimer();
@@ -1007,7 +1229,7 @@
                         <div class="text-center mb-6">
                             <span class="bg-emerald-500/10 text-emerald-700 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-emerald-500/20">Graded</span>
                             <h2 class="text-3xl font-bold text-[#0b3d2b] mt-3">Examination Scorecard</h2>
-                            <p class="text-[#58796b] text-sm">Candidate: <span class="text-[#0b3d2b] font-medium">${esc(state.user.name)}</span> (${esc(state.user.regNumber)})</p>
+                            <p class="text-[#58796b] text-sm">Candidate: <span class="text-[#0b3d2b] font-medium">${esc(state.user.name)}</span>${state.user.regNumber ? ' (' + esc(state.user.regNumber) + ')' : ''}</p>
                         </div>
                         <div class="grid grid-cols-2 gap-4 mb-6 text-center">
                             <div class="bg-[#faf8f2] p-5 rounded-xl border border-[#e8e2d2]">
@@ -1047,9 +1269,42 @@
         }
 
 // --- PROGRESS, HISTORY AND ANSWER REVIEW ---
+        // True when the 3 free days are over and the student has no active pass (admins and pass-check errors never lock).
+        function isLockedOut() {
+            if (!state.user || state.isAdmin || !state.pass || state.pass.error || state.pass.active) return false;
+            const end = trialEndMs();
+            return end > 0 && Date.now() >= end;
+        }
+
+        function renderLocked() {
+            return `
+                <div class="flex-1 flex flex-col bg-[#faf8f2] text-[#0b3d2b]">
+                    <header class="bg-gradient-to-b from-[#0b6b45] to-[#00170f] px-4 sm:px-8 py-3">
+                        <div class="leading-tight text-white">
+                            <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR CBT</p>
+                            <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
+                        </div>
+                    </header>
+                    <main class="flex-1 px-4 pt-6 pb-10">
+                        <div class="max-w-sm sm:max-w-md mx-auto">
+                            <div class="bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed mb-4">
+                                ⏰ <strong>Your ${TRIAL_DAYS}-day free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-year pass (${PASS_PRICE}). It unlocks everything.
+                            </div>
+                            ${payBoxHtml()}
+                            <div class="flex flex-wrap gap-2 mt-4">
+                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">My payment is confirmed, check again</button>
+                                <button onclick="handleLogout()" class="text-sm font-semibold text-[#0b5a3c] px-3 py-3 hover:underline">Sign out</button>
+                            </div>
+                        </div>
+                    </main>
+                </div>`;
+        }
+
         async function showDashboard() {
+            if (!state.user) { setView('dashboard'); return; }
+            if (state.pass === null) { setView('loading'); await loadPass(); }
+            if (isLockedOut()) { setView('locked'); window.scrollTo(0, 0); return; }
             setView('dashboard');
-            if (!state.user) return;
             if (state.history === null) {
                 state.leaderboard = null;
                 await loadHistory();
@@ -1109,8 +1364,9 @@
                 const snap = await getDocs(query(collection(db, 'sessions'), where('uid', '==', state.user.uid)));
                 const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
                 state.practiceHistory = all.filter(x => x.mode === 'practice');
+                state.waecHistory = all.filter(x => x.mode === 'waec' && x.status === 'Completed');
                 state.history = all
-                    .filter(x => x.mode !== 'practice' && x.status === 'Completed' && x.scaledScore !== undefined)
+                    .filter(x => x.mode !== 'practice' && x.mode !== 'waec' && x.status === 'Completed' && x.scaledScore !== undefined)
                     .sort((a, b) => ((b.startedAt && b.startedAt.toMillis ? b.startedAt.toMillis() : 0) - (a.startedAt && a.startedAt.toMillis ? a.startedAt.toMillis() : 0)));
             } catch (err) {
                 console.error('Could not load history', err);
@@ -1134,7 +1390,7 @@
             } catch (err) { alert(friendlyError(err)); }
         }
 
-        function closeReview() { const b = state.review && state.review.back; if (b === 'result') setView('result'); else if (b === 'practiceResult') setView('practiceResult'); else showDashboard(); }
+        function closeReview() { const b = state.review && state.review.back; if (b === 'result') setView('result'); else if (b === 'practiceResult') setView('practiceResult'); else if (b === 'waecResult') setView('waecResult'); else showDashboard(); }
         function setReviewTab(t) { state.review.tab = t; render(); window.scrollTo(0, 0); }
 
         function renderReview() {
@@ -1248,6 +1504,7 @@
         }
 
         function openPractice() {
+            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); return; }
             if (state.psetup.subjects.length !== 3) state.psetup.subjects = defaultPicks();
             state.pickMsg = '';
             setView('practiceSetup');
@@ -1298,6 +1555,7 @@
         }
 
         function startPractice() {
+            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); showDashboard(); return; }
             const ps = state.psetup;
             if (ps.subjects.length !== 3) return;
             const subs = ['english', ...ps.subjects];
@@ -1375,8 +1633,8 @@
                     hasReview = true;
                 } catch (e) { console.error('Could not save practice review', e); }
                 await setDoc(ref, {
-                    uid: state.user.uid, name: state.user.name, regNumber: state.user.regNumber,
-                    subjects: P.subjects, mode: 'practice', status: 'Practice',
+                    uid: state.user.uid, name: state.user.name, regNumber: state.user.regNumber || '',
+                    subjects: P.subjects, mode: 'practice', style: P.style || 'jamb', status: 'Practice',
                     rawScore: right, totalQuestions: P.items.length,
                     breakdown: practiceBreakdown(), timeAllowedSecs: P.secs, hasReview,
                     startedAt: serverTimestamp()
@@ -1414,7 +1672,7 @@
                 <div class="flex-1 bg-[#faf8f2]">
                     <div class="max-w-3xl mx-auto p-4 sm:p-6">
                         <div class="flex items-center justify-between gap-3 mb-3">
-                            <span class="bg-amber-400/10 text-amber-800 text-[11px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20 truncate">Practice · ${esc(subjLabel(q.subject))}</span>
+                            <span class="bg-amber-400/10 text-amber-800 text-[11px] font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20 truncate">${P.style === 'waec' ? 'WAEC/NECO/GCE practice' : 'Practice'} · ${esc(subjLabel(q.subject))}</span>
                             <div class="flex items-center gap-3 shrink-0">
                                 <div class="bg-white px-3 py-1.5 rounded-xl border border-[#e8e2d2] flex items-center gap-1.5">
                                     <span class="text-[10px] text-[#58796b] font-semibold uppercase">Time</span>
@@ -1470,7 +1728,7 @@
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
                             <button onclick="startPracticeReview()" class="bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold py-3 rounded-xl transition">Review answers</button>
-                            <button onclick="startPractice()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Practise again</button>
+                            <button onclick="${P.style === 'waec' ? 'startWaecPractice()' : 'startPractice()'}" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Practise again</button>
                             <button onclick="showDashboard()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition">Dashboard</button>
                         </div>
                     </div>
@@ -1478,20 +1736,468 @@
         }
 
         // --- ADMIN (access controlled by the admins/{uid} document + Firestore rules) ---
+        // --- FREE TRIAL: practice is free for 3 days after registration, then needs the pass ---
+        const TRIAL_DAYS = 3;
+        const WAEC_PRACTICE_SECS_PER_Q = 60;   // WAEC/NECO/GCE pace: 60 questions in 60 minutes
+
+        function trialEndMs() {
+            const c = state.user && state.user.createdAt;
+            const ms = c && c.toMillis ? c.toMillis() : 0;
+            return ms ? ms + TRIAL_DAYS * 86400000 : 0;   // 0 = unknown, so we do not lock anyone by mistake
+        }
+
+        function hasPracticeAccess() {
+            if (hasActivePass()) return true;
+            const end = trialEndMs();
+            return end === 0 || Date.now() < end;
+        }
+
+        function passWaUrl() {
+            const u = state.user;
+            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+        }
+
+        function practiceGateHtml(fn, label) {
+            if (hasPracticeAccess()) return `<button onclick="${fn}" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">${label}</button>`;
+            if (state.pass === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your ${TRIAL_DAYS} free days of practice have ended. Get the 1-year pass (${PASS_PRICE}) to keep practising.</div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                </div>`;
+        }
+
+        function trialBannerHtml() {
+            if (state.isAdmin || state.pass === null || hasActivePass()) return '';
+            const end = trialEndMs();
+            if (!end) return '';
+            const left = end - Date.now();
+            const btn = `<button onclick="goPay()" class="inline-block mt-3 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-2.5 transition">Get a 1-year pass</button>`;
+            if (left > 0) {
+                const days = Math.ceil(left / 86400000);
+                return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>Free practice: ${days} ${days === 1 ? 'day' : 'days'} left</strong> (until ${esc(fmtDate(end))}). After that you need the 1-year pass (${PASS_PRICE}), which also unlocks the JAMB exam and WAEC/NECO/GCE papers.<br>${btn}</div>`;
+            }
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed">⏰ <strong>Your ${TRIAL_DAYS} free days of practice have ended.</strong> Get the 1-year pass (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn}</div>`;
+        }
+
+        // --- WAEC/NECO/GCE PRACTICE: one subject, instant feedback, timed at WAEC/NECO/GCE pace ---
+        function openWaecPractice() {
+            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); return; }
+            setView('waecPracticeSetup');
+            window.scrollTo(0, 0);
+        }
+        function setWpCount(n) { state.wpsetup.count = n; render(); }
+        function pickWpSubject(sub) { state.wpsetup.subject = sub; render(); }
+
+        function renderWaecPracticeSetup() {
+            const ws = state.wpsetup;
+            const subs = ['english', ...OTHER_SUBJECTS];
+            const avail = availableFor(ws.subject);
+            const n = Math.min(ws.count, avail);
+            const btn = sub => {
+                const on = ws.subject === sub;
+                return `<button onclick="pickWpSubject('${sub}')" class="text-left p-3 rounded-xl border text-sm font-semibold transition ${on ? 'bg-[#e1f3e8] border-[#066c43] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
+                    <span class="flex items-center justify-between gap-2">
+                        <span>${esc(subjLabel(sub))}</span>
+                        <span class="w-5 h-5 shrink-0 rounded-full border flex items-center justify-center text-[11px] ${on ? 'bg-[#066c43] border-[#066c43] text-white' : 'border-[#c9c3ad] text-transparent'}">✓</span>
+                    </span>
+                    ${hasRealQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
+                </button>`;
+            };
+            const pill = on => `px-4 py-3 rounded-xl text-sm font-semibold border transition ${on ? 'bg-indigo-600 text-white border-[#0b5a3c]' : 'bg-[#faf8f2] text-[#2f5546] border-[#e8e2d2] hover:border-[#0b5a3c]'}`;
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2] text-[#0b3d2b]">
+                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
+                        <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">WAEC/NECO/GCE practice</span>
+                        <h2 class="text-2xl font-bold mt-3">Practise one subject</h2>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed at WAEC/NECO/GCE pace, and you see the correct answer after every question.</p>
+                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Subject</p>
+                        <div class="grid grid-cols-2 gap-2">${subs.map(btn).join('')}</div>
+                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Number of questions</p>
+                        <div class="grid grid-cols-4 gap-2">${[10, 20, 40, 60].map(c => `<button onclick="setWpCount(${c})" class="${pill(ws.count === c)}">${c}</button>`).join('')}</div>
+                        ${avail < ws.count ? `<p class="text-xs text-amber-800 mt-2">Only ${avail} ${esc(subjLabel(ws.subject))} questions are available right now.</p>` : ''}
+                        <div class="mt-5 text-sm bg-[#faf8f2] border border-[#e8e2d2] rounded-xl p-3 leading-relaxed">
+                            ⏱️ <strong>${n} questions</strong> · about <strong>${Math.max(1, Math.round(n * WAEC_PRACTICE_SECS_PER_Q / 60))} minutes</strong> (${WAEC_PRACTICE_SECS_PER_Q} seconds per question).
+                        </div>
+                        <div class="flex gap-3 mt-8">
+                            <button onclick="showDashboard()" class="flex-1 bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546] font-semibold py-3 rounded-xl transition">← Back</button>
+                            <button onclick="startWaecPractice()" class="flex-[2] bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Start practice</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function startWaecPractice() {
+            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); showDashboard(); return; }
+            const ws = state.wpsetup;
+            const sub = ws.subject;
+            const raw = sub === 'english' ? buildPracticeEnglish(ws.count) : getRandomQuestions(sub, ws.count);
+            const items = raw.map(q => ({ ...q, subject: sub }));
+            if (!items.length) { alert('No questions are available for this subject yet.'); return; }
+            const secs = items.length * WAEC_PRACTICE_SECS_PER_Q;
+            state.practice = { style: 'waec', subjects: [sub], items, index: 0, answers: {}, secs, timeLeft: secs, deadline: Date.now() + secs * 1000, timedOut: false };
+            setView('practice');
+            window.scrollTo(0, 0);
+            startPracticeTimer();
+        }
+
+        // --- WAEC/NECO/GCE MODE: one subject, 60 questions, timed, exam-style (no answers shown until the end) ---
+        const WAEC_QS = 60;
+        const WAEC_MINUTES = 60;
+        const WAEC_NEEDS_PASS = true;   // set to false to make WAEC/NECO/GCE mode free (the Firestore rules must then allow mode 'waec')
+        let waecInterval = null;
+
+        function hasWaecAccess() { return !WAEC_NEEDS_PASS || hasActivePass(); }
+
+        function waecGrade(pct) {
+            if (pct >= 75) return { code: 'A1', label: 'Excellent' };
+            if (pct >= 70) return { code: 'B2', label: 'Very good' };
+            if (pct >= 65) return { code: 'B3', label: 'Good' };
+            if (pct >= 60) return { code: 'C4', label: 'Credit' };
+            if (pct >= 55) return { code: 'C5', label: 'Credit' };
+            if (pct >= 50) return { code: 'C6', label: 'Credit' };
+            if (pct >= 45) return { code: 'D7', label: 'Pass' };
+            if (pct >= 40) return { code: 'E8', label: 'Pass' };
+            return { code: 'F9', label: 'Fail' };
+        }
+
+        function waecAccessHtml() {
+            const P = state.pass;
+            const u = state.user;
+            if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
+            if (P === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
+            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-year pass (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
+                <div class="flex flex-wrap gap-2 mt-3">
+                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                </div>`;
+        }
+
+        function openWaecSetup() {
+            if (!hasWaecAccess()) { alert('WAEC/NECO/GCE mode needs an active pass.'); return; }
+            setView('waecSetup');
+            window.scrollTo(0, 0);
+        }
+        function pickWaecSubject(sub) { state.wsetup.subject = sub; render(); }
+
+        function renderWaecSetup() {
+            const sel = state.wsetup.subject;
+            const subs = ['english', ...OTHER_SUBJECTS];
+            const n = sel === 'english' ? englishExamSize() : Math.min(WAEC_QS, availableFor(sel));
+            const mins = Math.max(1, Math.round(n * (WAEC_MINUTES / WAEC_QS)));
+            const btn = sub => {
+                const on = sel === sub;
+                return `<button onclick="pickWaecSubject('${sub}')" class="text-left p-3 rounded-xl border text-sm font-semibold transition ${on ? 'bg-[#e1f3e8] border-[#066c43] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
+                    <span class="flex items-center justify-between gap-2">
+                        <span>${esc(subjLabel(sub))}</span>
+                        <span class="w-5 h-5 shrink-0 rounded-full border flex items-center justify-center text-[11px] ${on ? 'bg-[#066c43] border-[#066c43] text-white' : 'border-[#c9c3ad] text-transparent'}">✓</span>
+                    </span>
+                    ${hasRealQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
+                </button>`;
+            };
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2] text-[#0b3d2b]">
+                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
+                        <span class="bg-[#e1f3e8] text-[#0b5a3c] text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-[#bfe0cd]">WAEC/NECO/GCE mode</span>
+                        <h2 class="text-2xl font-bold mt-3">Choose one subject</h2>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">One paper at a time, timed. Answers are shown only after you submit.</p>
+                        <div class="grid grid-cols-2 gap-2 mt-5">${subs.map(btn).join('')}</div>
+                        ${n < WAEC_QS ? `<p class="text-xs text-amber-800 mt-3">Only ${n} ${esc(subjLabel(sel))} questions are available right now, so this paper will have ${n}.</p>` : ''}
+                        <div class="mt-5 text-sm bg-[#faf8f2] border border-[#e8e2d2] rounded-xl p-3 leading-relaxed">
+                            ⏱️ <strong>${n} questions</strong> · <strong>${mins} minutes</strong>. The paper submits by itself when time is up.
+                        </div>
+                        <div class="flex gap-3 mt-8">
+                            <button onclick="showDashboard()" class="flex-1 bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546] font-semibold py-3 rounded-xl transition">← Back</button>
+                            <button onclick="startWaec()" class="flex-[2] bg-[#066c43] hover:bg-[#055a37] text-white font-semibold py-3 rounded-xl transition">Begin paper 🚀</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        async function startWaec() {
+            if (!hasWaecAccess()) { alert('WAEC/NECO/GCE mode needs an active pass.'); showDashboard(); return; }
+            const sub = state.wsetup.subject;
+            const raw = sub === 'english' ? buildEnglishExam() : getRandomQuestions(sub, WAEC_QS);
+            const items = raw.map(q => ({ ...q, subject: sub }));
+            if (!items.length) { alert('No questions are available for this subject yet.'); return; }
+            const secs = Math.round(items.length * (WAEC_MINUTES * 60 / WAEC_QS));
+            const W = state.waec = { subject: sub, items, index: 0, answers: {}, flagged: {}, secs, timeLeft: secs, offset: 0, deadline: Date.now() + secs * 1000, sessionId: null, timedOut: false, saveError: false };
+            try {
+                const ref = await addDoc(collection(db, 'sessions'), {
+                    uid: state.user.uid, name: state.user.name, regNumber: state.user.regNumber || '',
+                    subjects: [sub], mode: 'waec', status: 'In progress',
+                    startedAt: serverTimestamp()
+                });
+                W.sessionId = ref.id;
+                try {
+                    const snap = await getDoc(ref);
+                    const t = snap.data() && snap.data().startedAt;
+                    if (t && t.toMillis) { W.offset = t.toMillis() - Date.now(); W.deadline = t.toMillis() + secs * 1000; }
+                } catch (_) {}
+            } catch (err) {
+                console.error('Could not log WAEC/NECO/GCE session start', err);
+                if (err && err.code === 'permission-denied') {
+                    state.pass = { expiresMs: 0, active: false, error: false };
+                    alert('Your pass is not active, so the paper cannot start.');
+                    state.waec = null;
+                    showDashboard();
+                    return;
+                }
+            }
+            setView('waec');
+            window.scrollTo(0, 0);
+            startWaecTimer();
+        }
+
+        function updateWaecTimer() {
+            const el = document.getElementById('waec-timer');
+            if (!el || !state.waec) return;
+            el.textContent = formatClock(state.waec.timeLeft);
+            if (state.waec.timeLeft < 300) el.classList.add('text-rose-600', 'animate-pulse');
+        }
+
+        function startWaecTimer() {
+            if (waecInterval) clearInterval(waecInterval);
+            const W = state.waec;
+            const tick = () => {
+                if (state.waec !== W || state.currentView !== 'waec') { clearInterval(waecInterval); waecInterval = null; return; }
+                W.timeLeft = Math.max(0, Math.round((W.deadline - (Date.now() + W.offset)) / 1000));
+                updateWaecTimer();
+                if (W.timeLeft <= 0) {
+                    clearInterval(waecInterval); waecInterval = null;
+                    W.timedOut = true;
+                    alert('Time is up! Submitting your paper now.');
+                    submitWaec();
+                }
+            };
+            waecInterval = setInterval(tick, 1000);
+            tick();
+        }
+
+        function waecSelect(i) { state.waec.answers[state.waec.index] = i; render(); }
+        function waecFlag() { const W = state.waec; W.flagged[W.index] = !W.flagged[W.index]; render(); }
+        function waecNext() { const W = state.waec; if (W.index < W.items.length - 1) { W.index++; render(); window.scrollTo(0, 0); } }
+        function waecPrev() { const W = state.waec; if (W.index > 0) { W.index--; render(); window.scrollTo(0, 0); } }
+        function waecJump(i) { state.waec.index = i; render(); window.scrollTo(0, 0); }
+        function waecConfirmSubmit() {
+            const W = state.waec;
+            const left = W.items.length - Object.keys(W.answers).length;
+            if (confirm(left ? 'You have ' + left + ' unanswered question' + (left === 1 ? '' : 's') + '. Submit your paper now?' : 'Submit your paper now?')) submitWaec();
+        }
+        function waecQuit() {
+            if (confirm('Leave this paper? Your answers will not be scored.')) {
+                if (waecInterval) { clearInterval(waecInterval); waecInterval = null; }
+                state.waec = null;
+                showDashboard();
+            }
+        }
+
+        function waecReviewItems() {
+            const W = state.waec;
+            return W.items.map((q, i) => ({ s: q.subject, q: q.question, o: q.options, a: q.answer, c: W.answers[i] === undefined ? -1 : W.answers[i], p: q.passage || null }));
+        }
+
+        async function submitWaec() {
+            if (state.currentView !== 'waec') return;
+            if (waecInterval) { clearInterval(waecInterval); waecInterval = null; }
+            const W = state.waec;
+            let right = 0;
+            W.items.forEach((q, i) => { if (W.answers[i] === q.answer) right++; });
+            W.right = right;
+            W.total = W.items.length;
+            W.percent = Math.round(right / W.total * 100);
+            W.grade = waecGrade(W.percent);
+            setView('waecResult');
+            window.scrollTo(0, 0);
+            if (!W.sessionId) { W.saveError = true; render(); return; }
+            try {
+                await updateDoc(doc(db, 'sessions', W.sessionId), {
+                    status: 'Completed', rawScore: right, totalQuestions: W.total,
+                    percent: W.percent, grade: W.grade.code, submittedAt: serverTimestamp()
+                });
+                await setDoc(doc(db, 'reviews', W.sessionId), { uid: state.user.uid, items: waecReviewItems() });
+                state.history = null;
+            } catch (err) {
+                console.error('Could not save WAEC/NECO/GCE result', err);
+                W.saveError = true;
+                if (state.currentView === 'waecResult') render();
+            }
+        }
+
+        function startWaecReview() {
+            state.review = { items: waecReviewItems(), tab: 'all', back: 'waecResult' };
+            setView('review');
+            window.scrollTo(0, 0);
+        }
+
+        function renderWaec() {
+            const W = state.waec;
+            const q = W.items[W.index];
+            const total = W.items.length;
+            const sel = W.answers[W.index];
+            const flagged = W.flagged[W.index];
+            const answered = Object.keys(W.answers).length;
+            return `
+                <div class="flex-1 flex flex-col bg-[#faf8f2]">
+                    <header class="sticky top-0 z-30 bg-white border-b border-[#e8e2d2] px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
+                        <div class="min-w-0">
+                            <h2 class="font-bold text-[#0b3d2b] tracking-wide">WAEC/NECO/GCE · ${esc(subjLabel(W.subject))}</h2>
+                            <p class="text-xs text-[#58796b] truncate">Candidate: <span class="text-[#0b5a3c] font-medium">${esc(state.user.name)}</span></p>
+                        </div>
+                        <div class="flex items-center gap-3 shrink-0">
+                            <div class="bg-[#faf8f2] px-3 py-2 rounded-xl border border-[#e8e2d2] flex items-center gap-2">
+                                <span class="text-xs text-[#58796b] font-semibold uppercase">Time:</span>
+                                <span id="waec-timer" class="font-mono text-emerald-700 font-bold text-lg">${formatClock(W.timeLeft)}</span>
+                            </div>
+                            <button onclick="waecConfirmSubmit()" class="bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition">Submit</button>
+                        </div>
+                    </header>
+
+                    <div class="flex-1 grid grid-cols-1 lg:grid-cols-4 items-start max-w-7xl mx-auto w-full p-4 sm:p-6 gap-4 sm:gap-6">
+                        <div class="lg:col-span-3 bg-white border border-[#e8e2d2] rounded-2xl p-4 sm:p-6 lg:p-8 shadow-xl">
+                            <div class="flex items-center justify-between mb-6">
+                                <span class="text-xs font-semibold px-3 py-1 rounded-full bg-[#e1f3e8] text-[#0b5a3c] border border-[#bfe0cd] uppercase">Question ${W.index + 1} of ${total}</span>
+                                <button onclick="waecFlag()" class="text-xs font-semibold px-3 py-1 rounded-full border transition ${flagged ? 'bg-amber-500/20 text-amber-700 border-amber-500/40' : 'bg-[#eef1ec] text-[#58796b] border-[#d9d4c3] hover:text-[#0b3d2b]'}">${flagged ? '🚩 Flagged' : '🏳️ Flag for review'}</button>
+                            </div>
+                            ${q.passage ? `<div class="mb-5 p-4 rounded-xl bg-[#faf8f2] border border-[#e8e2d2] text-sm text-[#2f5546] leading-relaxed max-h-64 overflow-y-auto"><p class="text-xs font-semibold text-[#0b5a3c] uppercase mb-2">Read the passage and answer the question</p>${esc(q.passage)}</div>` : ''}
+                            <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-6 leading-relaxed">${esc(q.question)}</h3>
+                            <div class="space-y-3">
+                                ${q.options.map((opt, idx) => `
+                                    <label onclick="waecSelect(${idx})" class="flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${sel === idx ? 'bg-[#e1f3e8] border-[#0b5a3c] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
+                                        <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs ${sel === idx ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${String.fromCharCode(65 + idx)}</span>
+                                        <span class="text-sm font-medium">${esc(opt)}</span>
+                                    </label>`).join('')}
+                            </div>
+                            <div class="flex items-center justify-between pt-6 mt-6 border-t border-[#e8e2d2]">
+                                <button onclick="waecPrev()" ${W.index === 0 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-xs hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
+                                <button onclick="waecNext()" ${W.index === total - 1 ? 'disabled' : ''} class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+                            </div>
+                        </div>
+
+                        <div class="bg-white border border-[#e8e2d2] rounded-2xl p-4 sm:p-6 shadow-xl lg:sticky lg:top-24">
+                            <h4 class="font-bold text-[#0b3d2b] text-sm mb-2 uppercase tracking-wide">Palette</h4>
+                            <p class="text-xs text-[#58796b] mb-4">Tap any number to jump</p>
+                            <div class="grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-5 gap-1.5 mb-6">
+                                ${W.items.map((_, idx) => {
+                                    let cls = 'bg-[#faf8f2] text-[#58796b] border-[#e8e2d2]';
+                                    if (W.answers[idx] !== undefined) cls = 'bg-[#cfeadb] text-[#0b5a3c] border-[#0b5a3c]';
+                                    if (W.index === idx) cls = 'border-2 border-[#0b5a3c] text-[#0b3d2b] bg-[#e1f3e8]';
+                                    if (W.flagged[idx]) cls = 'bg-amber-500/20 text-amber-800 border-amber-500/50';
+                                    return `<button onclick="waecJump(${idx})" class="h-9 rounded-lg font-bold text-xs border transition ${cls}">${idx + 1}</button>`;
+                                }).join('')}
+                            </div>
+                            <div class="space-y-2 text-xs text-[#58796b] pt-4 border-t border-[#e8e2d2]">
+                                <div class="flex justify-between"><span>Answered:</span><span class="font-bold text-emerald-700">${answered} / ${total}</span></div>
+                                <div class="flex justify-between"><span>Unanswered:</span><span class="font-bold text-[#2f5546]">${total - answered}</span></div>
+                            </div>
+                            <button onclick="waecQuit()" class="mt-4 text-xs text-[#58796b] hover:text-[#0b3d2b] font-semibold">✕ Leave paper</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
+        function renderWaecResult() {
+            const W = state.waec;
+            const g = W.grade;
+            const msg = W.timedOut ? 'Time ran out. Unanswered questions count as wrong. ⏱️' : (W.percent >= 50 ? 'Well done! That is a credit level score. 🌟' : 'Keep practising. Go through your answers to see where you lost marks. 📚');
+            return `
+                <div class="flex-1 flex flex-col items-center justify-center p-6 bg-[#faf8f2]">
+                    <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-8 shadow-xl text-center">
+                        <span class="bg-[#e1f3e8] text-[#0b5a3c] text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-[#bfe0cd]">WAEC/NECO/GCE · ${esc(subjLabel(W.subject))}</span>
+                        <p class="text-6xl font-extrabold text-emerald-700 mt-5">${W.right}<span class="text-2xl text-[#7a9588]"> / ${W.total}</span></p>
+                        <p class="text-[#2f5546] mt-1">${W.percent}% correct</p>
+                        <div class="inline-block mt-4 px-5 py-2 rounded-xl bg-[#e1f3e8] border border-[#bfe0cd]">
+                            <p class="font-display font-extrabold text-2xl text-[#066c43]">${esc(g.code)}</p>
+                            <p class="text-xs text-[#0b5a3c] font-semibold">${esc(g.label)}</p>
+                        </div>
+                        <p class="text-sm text-[#58796b] mt-4">${msg}</p>
+                        <p class="text-[11px] text-[#7a9588] mt-2">The grade follows the usual WAEC/NECO/GCE bands, but this is practice, so your real result may differ.</p>
+                        ${W.saveError ? `<p class="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3 mt-4">We could not save this result, so it will not show on your dashboard. Your score above is still correct.</p>` : ''}
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
+                            <button onclick="startWaecReview()" class="bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold py-3 rounded-xl transition">Review answers</button>
+                            <button onclick="openWaecSetup()" class="bg-amber-400 hover:bg-amber-300 text-slate-950 font-semibold py-3 rounded-xl transition">Another paper</button>
+                            <button onclick="showDashboard()" class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition">Dashboard</button>
+                        </div>
+                    </div>
+                </div>`;
+        }
+
         async function openAdmin() {
             if (!state.isAdmin) return;
             try {
-                const [uSnap, sSnap] = await Promise.all([
+                const [uSnap, sSnap, pSnap] = await Promise.all([
                     getDocs(collection(db, 'users')),
-                    getDocs(query(collection(db, 'sessions'), orderBy('startedAt', 'desc'), limit(100)))
+                    getDocs(query(collection(db, 'sessions'), orderBy('startedAt', 'desc'), limit(100))),
+                    getDocs(collection(db, 'passes')).catch(() => ({ docs: [], failed: true }))
                 ]);
-                state.adminData.users = uSnap.docs.map(d => d.data());
+                state.adminData.passes = {};
+                pSnap.docs.forEach(d => { const e = d.data().expiresAt; state.adminData.passes[d.id] = e && e.toMillis ? e.toMillis() : 0; });
+                state.adminData.passesFailed = !!pSnap.failed;
+                state.adminData.users = uSnap.docs.map(d => ({ uid: d.id, ...d.data() }));
                 state.adminData.sessions = sSnap.docs.map(d => d.data());
                 setView('admin');
             } catch (err) { alert(friendlyError(err)); }
         }
 
         function fmtTime(ts) { return ts && ts.toDate ? ts.toDate().toLocaleString() : '—'; }
+
+        function adminStudentsHtml() {
+            const { users, passes } = state.adminData;
+            const f = (state.adminFilter || '').trim().toLowerCase();
+            const list = users.filter(u => !f || [u.name, u.email, u.regNumber].some(v => String(v || '').toLowerCase().includes(f)));
+            if (!list.length) return '<p class="text-sm text-[#0b3d2b]/60">No students match.</p>';
+            const shown = list.slice(0, 60);
+            return `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                ${shown.map(u => {
+                    const ms = (passes && passes[u.uid]) || 0;
+                    const active = ms > Date.now();
+                    return `<div class="bg-[#faf8f2] p-4 rounded-xl border border-[#e8e2d2]">
+                        <p class="font-semibold text-sm">${esc(u.name)}</p>
+                        <p class="text-xs text-[#0b5a3c] break-all mt-0.5">${esc(u.email)}</p>
+                        ${u.regNumber ? `<p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>` : ''}
+                        <p class="text-xs font-semibold mt-2 ${active ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${active ? '✓ Pass until ' + esc(fmtDate(ms)) : (ms ? 'Pass expired ' + esc(fmtDate(ms)) : 'No pass')}</p>
+                        <div class="flex flex-wrap gap-1.5 mt-2">
+                            <button onclick="grantPass('${esc(u.uid)}', ${YEAR_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 year</button>
+                            <button onclick="grantPass('${esc(u.uid)}', 30)" class="text-[11px] font-semibold border border-[#d9d4c3] hover:border-[#0b5a3c] rounded-lg px-2.5 py-1.5">+30 days</button>
+                            ${ms ? `<button onclick="removePass('${esc(u.uid)}')" class="text-[11px] font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50 rounded-lg px-2.5 py-1.5">Remove</button>` : ''}
+                        </div>
+                    </div>`;
+                }).join('')}
+            </div>${list.length > shown.length ? `<p class="text-xs text-[#0b3d2b]/60 mt-3">Showing the first ${shown.length} of ${list.length}. Use the search box to find a student.</p>` : ''}`;
+        }
+
+        function setAdminFilter(v) {
+            state.adminFilter = v;
+            const el = document.getElementById('admin-students');
+            if (el) el.innerHTML = adminStudentsHtml();
+        }
+
+        async function grantPass(uid, days) {
+            const u = state.adminData.users.find(x => x.uid === uid);
+            if (!u) return;
+            const base = Math.max(Date.now(), state.adminData.passes[uid] || 0);
+            const exp = base + days * 86400000;
+            if (!confirm('Give ' + u.name + ' ' + (days === 365 ? '1 year' : days + ' more days') + '? The pass will run until ' + fmtDate(exp) + '.')) return;
+            try {
+                await setDoc(doc(db, 'passes', uid), {
+                    uid, name: u.name || '', regNumber: u.regNumber || '', days,
+                    grantedAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(exp)
+                });
+                state.adminData.passes[uid] = exp;
+                setAdminFilter(state.adminFilter);
+            } catch (err) { alert(friendlyError(err)); }
+        }
+
+        async function removePass(uid) {
+            const u = state.adminData.users.find(x => x.uid === uid);
+            if (!u || !confirm('Remove the pass for ' + u.name + '?')) return;
+            try {
+                await deleteDoc(doc(db, 'passes', uid));
+                delete state.adminData.passes[uid];
+                setAdminFilter(state.adminFilter);
+            } catch (err) { alert(friendlyError(err)); }
+        }
 
         function renderAdmin() {
             const { users, sessions } = state.adminData;
@@ -1506,7 +2212,7 @@
                             <div class="flex items-center gap-2">
                                 <div class="w-8 h-8 rounded-lg bg-[#066c43] text-white flex items-center justify-center text-sm">🎓</div>
                                 <div class="leading-tight">
-                                    <p class="font-display font-bold text-xs">GENIUS TUTOR</p>
+                                    <p class="font-display font-bold text-xs">GENIUS TUTOR CBT</p>
                                     <p class="text-[9px] font-semibold tracking-[0.2em] text-[#b88700]">ADMIN</p>
                                 </div>
                             </div>
@@ -1519,16 +2225,10 @@
                         <h1 class="font-display font-extrabold text-2xl sm:text-3xl mt-3">Candidate activity & accounts</h1>
 
                         <div class="${card} p-5 mt-6">
-                            <h2 class="font-display font-bold text-lg mb-4">Registered students (${users.length})</h2>
-                            ${users.length === 0 ? '<p class="text-sm text-[#0b3d2b]/60">No students yet.</p>' : `
-                                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    ${users.map(u => `
-                                        <div class="bg-[#faf8f2] p-4 rounded-xl border border-[#e8e2d2]">
-                                            <p class="font-semibold text-sm">${esc(u.name)}</p>
-                                            <p class="text-xs text-[#0b5a3c] break-all mt-0.5">${esc(u.email)}</p>
-                                            <p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>
-                                        </div>`).join('')}
-                                </div>`}
+                            <h2 class="font-display font-bold text-lg">Students and passes (${users.length})</h2>
+                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Full exams need an active pass. After a student pays you, tap +1 year on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
+                            <input type="search" value="${esc(state.adminFilter)}" oninput="setAdminFilter(this.value)" placeholder="Search by name, email or reg number" class="${inputCls} mb-4">
+                            <div id="admin-students">${adminStudentsHtml()}</div>
                         </div>
 
                         <div class="${card} p-5 mt-6 overflow-hidden">
@@ -1553,8 +2253,8 @@
                                                     <td class="py-3 px-3 text-[#0b5a3c]">${esc(x.regNumber)}</td>
                                                     <td class="py-3 px-3 text-xs uppercase text-[#0b3d2b]/70">${esc((x.subjects || []).join(', '))}</td>
                                                     <td class="py-3 px-3 text-[#0b3d2b]/60 text-xs">${esc(fmtTime(x.startedAt))}</td>
-                                                    <td class="py-3 px-3 font-semibold">${x.mode === 'practice' ? esc(x.rawScore) + ' / ' + esc(x.totalQuestions) : (x.scaledScore !== undefined ? esc(x.scaledScore) + ' / 400' : '—')}</td>
-                                                    <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${badge(x)}">${esc(x.mode === 'practice' ? 'Practice' : (x.status || '—'))}</span></td>
+                                                    <td class="py-3 px-3 font-semibold">${(x.mode === 'practice' || x.mode === 'waec') ? esc(x.rawScore !== undefined ? x.rawScore : '—') + ' / ' + esc(x.totalQuestions !== undefined ? x.totalQuestions : '—') : (x.scaledScore !== undefined ? esc(x.scaledScore) + ' / 400' : '—')}</td>
+                                                    <td class="py-3 px-3"><span class="px-2.5 py-1 rounded-full text-xs font-semibold ${badge(x)}">${esc(x.mode === 'practice' ? 'Practice' : (x.mode === 'waec' ? 'WAEC/NECO/GCE' + (x.grade ? ' ' + x.grade : '') : (x.status || '—')))}</span></td>
                                                 </tr>`).join('')}
                                         </tbody>
                                     </table>
@@ -1645,8 +2345,8 @@
                         <div class="flex items-center gap-2.5">
                             <div class="w-8 h-8 rounded-lg bg-[#f4b731] text-[#0b3d2b] flex items-center justify-center">🎓</div>
                             <div class="leading-tight text-white">
-                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR</p>
-                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">JAMB CBT</p>
+                                <p class="font-display font-bold text-xs tracking-wide">GENIUS TUTOR CBT</p>
+                                <p class="text-[9px] font-semibold tracking-[0.2em] text-[#f4b731]">UTME · WAEC · NECO · GCE</p>
                             </div>
                         </div>
                     </header>
@@ -1675,13 +2375,13 @@
         async function forceLogout(msg) {
             try { await signOut(auth); } catch (_) {}
             if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
-            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null;
+            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('login', msg);
         }
         function checkAway() {
             if (!state.user) return;
             // never log someone out in the middle of an exam or practice, it would lose their work
-            if (['exam', 'practice', 'result'].includes(state.currentView)) { touchActive(); return; }
+            if (['exam', 'practice', 'result', 'waec', 'waecResult'].includes(state.currentView)) { touchActive(); return; }
             if (awayTooLong()) forceLogout(AWAY_NOTICE);
         }
         document.addEventListener('visibilitychange', () => {
@@ -1696,7 +2396,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, openPractice, openExamSetup, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
@@ -1712,6 +2412,11 @@
             }
             render();
         })();
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+        }
     </script>
 </body>
 </html>
