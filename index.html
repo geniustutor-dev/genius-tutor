@@ -38,6 +38,10 @@
             border-left: 2px solid currentColor; border-right: 2px solid currentColor;
             background: linear-gradient(currentColor, currentColor) left top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) left bottom / .4em 2px no-repeat,
                         linear-gradient(currentColor, currentColor) right top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) right bottom / .4em 2px no-repeat; }
+        /* mobile view on wide screens: a phone-width column */
+        html.mobileview body { background: #0b2a1e; }
+        html.mobileview #app { width: 100%; max-width: 430px; margin: 0 auto; box-shadow: 0 0 40px rgba(0,0,0,.35); }
+        html.mobileview { font-size: 16px !important; }
         .mfig { display: block; margin: .4rem 0 .9rem; }
         .mfig svg { display: block; }
         img, svg { max-width: 100%; }
@@ -54,6 +58,7 @@
     <script src="chemistry.js"></script>
     <script src="physics.js"></script>
     <script src="mathematics.js"></script>
+    <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
         import {
@@ -193,7 +198,7 @@
             adminFilter: '',
             practice: null,
             wsetup: { subject: 'english' },
-            wpsetup: { subject: 'english', count: 20 },
+            wpsetup: { subject: 'english', count: 10 },
             waec: null,
             waecHistory: [],
             review: null,
@@ -456,6 +461,29 @@
         function installStore(get, val) {
             try { return get ? localStorage.getItem('gt_install_snooze') : localStorage.setItem('gt_install_snooze', String(val)); } catch (_) { return null; }
         }
+        // Installed app = always mobile view. Opened from a link in a browser = normal view, with a button to switch.
+        function viewMode() {
+            if (isStandalone()) return 'mobile';
+            try { return localStorage.getItem('gt_view') === 'mobile' ? 'mobile' : 'desktop'; } catch (_) { return 'desktop'; }
+        }
+        function toggleView() {
+            try { localStorage.setItem('gt_view', viewMode() === 'mobile' ? 'desktop' : 'mobile'); } catch (_) {}
+            render();
+        }
+        function updateViewToggle() {
+            let el = document.getElementById('view-toggle');
+            const show = !isStandalone() && window.innerWidth >= 700 && state.currentView !== 'loading';
+            if (!show) { if (el) el.remove(); return; }
+            if (!el) {
+                el = document.createElement('button');
+                el.id = 'view-toggle';
+                el.className = 'fixed bottom-4 right-4 z-[90] bg-white text-[#0b3d2b] border border-[#d9d4c3] shadow-lg rounded-full px-4 py-2.5 text-xs font-semibold hover:border-[#0b5a3c] transition';
+                el.onclick = toggleView;
+                document.body.appendChild(el);
+            }
+            el.textContent = viewMode() === 'mobile' ? '🖥️ Switch to desktop view' : '📱 Switch to mobile view';
+        }
+        window.addEventListener('resize', updateViewToggle);
         function isStandalone() {
             return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
         }
@@ -523,15 +551,59 @@
                 loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister, pay: renderPay, locked: renderLocked,
                 dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, waecSetup: renderWaecSetup, waecPracticeSetup: renderWaecPracticeSetup, waec: renderWaec, waecResult: renderWaecResult, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
             };
-            app.innerHTML = (views[state.currentView] || renderLoading)();
+            let html = (views[state.currentView] || renderLoading)();
+            const mob = viewMode() === 'mobile';
+            // mobile view = the phone layout: drop every sm:/md:/lg:/xl: class so wide screens use the same layout as a phone
+            if (mob) html = html.replace(/(\s)(?:sm|md|lg|xl|2xl):[^\s"'`]+/g, '$1');
+            document.documentElement.classList.toggle('mobileview', mob);
+            app.innerHTML = html;
             if (state.currentView === 'exam') updateTimerDisplay();
             if (state.currentView === 'practice') updatePracticeTimer();
             if (state.currentView === 'waec') updateWaecTimer();
             saveProgress();
+            updateViewToggle();
             updateInstallPopup();
         }
 
-        function setView(v, notice = '') { state.currentView = v; state.notice = notice; render(); }
+        // Every page the student opens is added to the browser history, so the phone's Back button returns to the earlier page
+        // instead of closing the app.
+        function setView(v, notice = '') {
+            const prev = state.currentView;
+            state.currentView = v; state.notice = notice; render();
+            if (v === prev || v === 'loading') return;
+            try {
+                const cur = history.state;
+                if (cur && cur.gt && cur.v === v) return;   // we are already on this history entry (after pressing Back)
+                const replace = prev === 'loading' || !(cur && cur.gt) || (v === 'dashboard' && ['login', 'register', 'home'].includes(prev));
+                if (replace) history.replaceState({ gt: 1, v }, ''); else history.pushState({ gt: 1, v }, '');
+            } catch (_) {}
+        }
+        function pushNav(v) { try { history.pushState({ gt: 1, v }, ''); } catch (_) {} }
+        // where a history entry should lead right now (old entries may point at pages that no longer make sense)
+        function navResolve(entry, cur) {
+            if (!state.user) return ['home', 'login', 'register'].includes(entry) ? entry : 'home';
+            if (['result', 'practiceResult', 'waecResult'].includes(entry)) return (cur === 'review' && state.review && state.review.back === entry) ? entry : 'dashboard';
+            if (['home', 'login', 'register', 'loading', 'action', 'exam', 'waec', 'practice', 'review', 'locked', 'admin'].includes(entry)) return 'dashboard';
+            return entry;
+        }
+        window.addEventListener('popstate', e => {
+            const cur = state.currentView, st = e.state;
+            if (cur === 'exam' || cur === 'waec') {            // a timed paper: Back must not drop the student out of it
+                pushNav(cur);
+                alert('Back is switched off during an exam. Use the Submit button when you are done.');
+                return;
+            }
+            if (cur === 'practice') {                           // asks before leaving; stays if the student says no
+                quitPractice();
+                if (state.currentView === 'practice') pushNav('practice');
+                return;
+            }
+            if (!st || !st.gt) return;
+            const target = navResolve(st.v, cur);
+            if (target === cur && target !== st.v) { history.back(); return; }   // skip entries that lead nowhere new
+            if (target !== st.v) { try { history.replaceState({ gt: 1, v: target }, ''); } catch (_) {} }
+            if (target === 'dashboard') showDashboard(); else if (target !== cur) setView(target);
+        });
 
         function noticeBox() {
             return state.notice ? `<div class="mb-4 text-xs bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-xl p-3 leading-relaxed">${esc(state.notice)}</div>` : '';
@@ -580,9 +652,9 @@
 
                             <div class="grid md:grid-cols-2 gap-10 items-center py-8 md:py-14">
                                 <div>
-                                    <span class="inline-block text-[11px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">UTME CBT PRACTICE</span>
+                                    <span class="inline-block text-[11px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">JAMB/WAEC/NECO/GCE PRACTICE</span>
                                     <h1 class="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] mt-4">Walk into your JAMB exam already used to the screen.</h1>
-                                    <p class="text-sm sm:text-base text-white/80 mt-5 max-w-md leading-relaxed">Take a full timed CBT exam, or practise at real exam speed in the subjects you choose. Enjoy a question palette like the real exam hall, instant marking and a complete answer review after every attempt.</p>
+                                    <p class="text-sm sm:text-base text-white/80 mt-5 max-w-md leading-relaxed">Take a full timed CBT exam, or practise at real exam speed in the subjects you choose. Enjoy a question palette like the real exam hall, instant marking and a complete answer review with explanations after every attempt.</p>
                                     <div class="flex flex-wrap gap-3 mt-7">
                                         <button onclick="setView('register')" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-6 py-3 transition">Create free account</button>
                                         <button onclick="setView('login')" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-6 py-3 transition">I already have an account</button>
@@ -648,7 +720,7 @@
                                 ['Do I have to verify my email?', 'Yes. After you register we send a verification link. Tap it, then sign in. If you cannot see the email, check your spam folder.'],
                                 ['The verification link does not open. What do I do?', 'Try switching between mobile data and Wi-Fi, or turn off any VPN, then tap the link again. If it still fails, message me on WhatsApp below and I will help you.'],
                                 ['Which subjects can I choose?', 'English Language is compulsory. You pick any 3 other subjects for a full exam or a practice session.'],
-                                ['Is the practice timed?', 'Yes, at the same pace as the real exam, about 40 seconds per question. You see the correct answer after every question.']
+                                ['Is the practice timed?', 'Yes, at the same pace as the real exam, about 40 seconds per question. Like the real exam, the answers are shown only after you submit, together with a short explanation for each question.']
                             ].map((f, i) => `
                                 <details class="group ${i ? 'border-t border-[#efe9d9]' : ''}">
                                     <summary class="flex items-center justify-between gap-3 cursor-pointer list-none px-5 py-4 text-sm font-semibold">
@@ -660,7 +732,7 @@
 
                         <div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                             <div>
-                                <h3 class="font-display font-bold">Know someone writing UTME?</h3>
+                                <h3 class="font-display font-bold">Know someone writing JAMB/WAEC/NECO/GCE?</h3>
                                 <p class="text-sm text-[#0b3d2b]/70 mt-0.5">Share Genius Tutor with your friends on WhatsApp.</p>
                             </div>
                             <a href="https://wa.me/?text=${encodeURIComponent('Practise for your JAMB UTME CBT with Genius Tutor: ' + (location.origin || ''))}" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition shrink-0">📲 Share on WhatsApp</a>
@@ -680,7 +752,7 @@
                     </section>
 
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
-                        <span>© 2026 Genius Tutor CBT. Practice platform for UTME preparation.</span>
+                        <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
                         <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
@@ -1214,13 +1286,13 @@
                             <div class="${card} p-6 flex flex-col">
                                 <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">JAMB PRACTICE</span>
                                 <h2 class="font-display font-bold text-2xl mt-3">Practise for JAMB</h2>
-                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick English plus 3 subjects and 5 to 40 questions each. Timed at exam pace, with the correct answer shown after every question and a full review at the end.</p>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">English plus 3 subjects: 20 English questions and 10 from each other subject. Timed at exam pace. Answers and explanations are shown after you submit.</p>
                                 ${practiceGateHtml('openPractice()', '✏️ Start practice')}
                             </div>
                             <div class="${card} p-6 flex flex-col">
                                 <span class="self-start text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">WAEC/NECO/GCE PRACTICE</span>
                                 <h2 class="font-display font-bold text-2xl mt-3">Practise for WAEC/NECO/GCE</h2>
-                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick one subject and 10 to 60 questions. Timed at WAEC/NECO/GCE pace, with the correct answer shown after every question and a full review at the end.</p>
+                                <p class="text-sm text-[#0b3d2b]/65 mt-1.5 leading-relaxed">Pick one subject and practise 10 questions. Timed at WAEC/NECO/GCE pace. Answers and explanations are shown after you submit.</p>
                                 ${practiceGateHtml('openWaecPractice()', '✏️ Start WAEC/NECO/GCE practice')}
                             </div>
                         </div>
@@ -1243,7 +1315,7 @@
                     </main>
 
                     <footer class="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
-                        <span>© 2026 Genius Tutor CBT. Practice platform for UTME preparation.</span>
+                        <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
                         <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
@@ -1588,6 +1660,12 @@
         window.addEventListener('pagehide', saveProgress);
         document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveProgress(); });
 
+// --- EXPLANATIONS (explanations.js: window.EXPLAIN maps a question fingerprint to a short explanation) ---
+        function explainHtml(i) {
+            const e = window.EXPLAIN && window.EXPLAIN[keyOf([i.q, i.o[i.a]])];
+            return e ? `<div class="mt-3 text-sm bg-[#f4f8f6] border border-[#cfe5d8] rounded-xl p-3 leading-relaxed text-[#2f5546]"><span class="font-semibold text-[#0b5a3c]">Explanation: </span>${fq(e, i.s)}</div>` : '';
+        }
+
 // --- PROGRESS, HISTORY AND ANSWER REVIEW ---
         // True when the 3 free days are over and the student has no active pass (admins and pass-check errors never lock).
         function isLockedOut() {
@@ -1748,6 +1826,7 @@
                         </div>
                         ${i.n ? novelTag({ novel: true }) : ''}<h3 class="text-base font-medium text-[#0b3d2b] mb-4 leading-relaxed">${fq(i.q, i.s)}</h3>
                         <div class="space-y-2">${opts}</div>
+                        ${explainHtml(i)}
                     </div>`;
             }).join('');
             const tabBtn = (key, label) => `<button onclick="setReviewTab('${key}')" class="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider whitespace-nowrap transition ${R.tab === key ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${label}</button>`;
@@ -1903,7 +1982,7 @@
                     <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
                         <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">Practice mode</span>
                         <h2 class="text-2xl font-bold mt-3">Practise at exam pace</h2>
-                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed, and you see the correct answer after every question. Practice results are kept separate from your full exams.</p>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed like the real exam. You can move between questions and change answers, and the correct answers and explanations are shown after you submit. Practice results are kept separate from your full exams.</p>
 
                         ${renderSubjectPicker('practice')}
 
@@ -1944,8 +2023,13 @@
 
         function practiceAnswer(idx) {
             const P = state.practice;
-            if (P.answers[P.index] !== undefined) return;
-            P.answers[P.index] = idx;
+            P.answers[P.index] = idx;      // like the exam: the student can change an answer until they submit
+            render();
+        }
+        function practiceFlag() {
+            const P = state.practice;
+            P.flagged = P.flagged || {};
+            P.flagged[P.index] = !P.flagged[P.index];
             render();
         }
 
@@ -1962,7 +2046,7 @@
         function practiceFinishNow() {
             const P = state.practice;
             const left = P.items.length - Object.keys(P.answers).length;
-            if (!left || confirm('You have ' + left + ' unanswered question' + (left === 1 ? '' : 's') + '. Finish this practice now?')) finishPractice();
+            if (confirm(left ? 'You have ' + left + ' unanswered question' + (left === 1 ? '' : 's') + '. Submit this practice now?' : 'Submit this practice now?')) finishPractice();
         }
 
         function quitPractice() {
@@ -2027,38 +2111,27 @@
 
         function renderPractice() {
             const P = state.practice;
+            P.flagged = P.flagged || {};
             const q = P.items[P.index];
             const total = P.items.length;
-            const chosen = P.answers[P.index];
-            const done = chosen !== undefined;
+            const sel = P.answers[P.index];
             const isLast = P.index === total - 1;
             const answered = Object.keys(P.answers).length;
             const pct = Math.round((answered / total) * 100);
             if (P.style !== 'waec' && !q.marked) { q.marked = true; markSeen(q.seenKey || q.subject, q.key); }
-            const opts = q.options.map((opt, idx) => {
-                let cls = 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]';
-                if (done) {
-                    cls = 'bg-[#faf8f2] border-[#e8e2d2] text-[#7a9588]';
-                    if (idx === q.answer) cls = 'bg-emerald-500/10 border-emerald-500 text-emerald-800';
-                    else if (idx === chosen) cls = 'bg-rose-500/10 border-rose-500 text-rose-800';
-                }
-                return `
-                    <button ${done ? 'disabled' : ''} onclick="practiceAnswer(${idx})" class="w-full text-left flex items-center gap-4 p-4 rounded-xl border transition ${cls}">
-                        <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs bg-white border border-[#e8e2d2]">${String.fromCharCode(65 + idx)}</span>
-                        <span class="text-sm font-medium">${fq(opt, q.subject)}</span>
-                    </button>`;
-            }).join('');
-            const feedback = !done ? '' : (chosen === q.answer
-                ? `<div class="mt-4 text-sm font-semibold text-emerald-800 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">✓ Correct!</div>`
-                : `<div class="mt-4 text-sm font-semibold text-rose-800 bg-rose-500/10 border border-rose-500/30 rounded-xl p-3">✗ Not quite. The correct answer is ${String.fromCharCode(65 + q.answer)}.</div>`);
-            // question number card: grouped by subject, coloured by result
+            const opts = q.options.map((opt, idx) => `
+                <label onclick="practiceAnswer(${idx})" class="flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${sel === idx ? 'bg-[#e1f3e8] border-[#0b5a3c] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
+                    <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs ${sel === idx ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${String.fromCharCode(65 + idx)}</span>
+                    <span class="text-sm font-medium">${fq(opt, q.subject)}</span>
+                </label>`).join('');
+            // question number card, grouped by subject (answered = green, flagged = amber)
             const groups = P.subjects.map(sub => {
                 const btns = P.items.map((it, i) => {
                     if (it.subject !== sub) return '';
                     let cls = 'bg-[#faf8f2] text-[#58796b] border-[#e8e2d2]';
-                    const c = P.answers[i];
-                    if (c !== undefined) cls = c === it.answer ? 'bg-emerald-500/15 text-emerald-800 border-emerald-500' : 'bg-rose-500/15 text-rose-800 border-rose-500';
+                    if (P.answers[i] !== undefined) cls = 'bg-[#cfeadb] text-[#0b5a3c] border-[#0b5a3c]';
                     if (i === P.index) cls = 'border-2 border-[#0b5a3c] text-[#0b3d2b] bg-[#e1f3e8]';
+                    if (P.flagged[i]) cls = 'bg-amber-500/20 text-amber-800 border-amber-500/50';
                     return `<button onclick="practiceJump(${i})" class="h-9 rounded-lg font-bold text-xs border transition ${cls}">${i + 1}</button>`;
                 }).join('');
                 return `<div class="mt-3"><p class="text-[11px] font-semibold text-[#58796b] uppercase mb-1.5">${esc(subjLabel(sub))}</p><div class="grid grid-cols-8 sm:grid-cols-10 gap-1.5">${btns}</div></div>`;
@@ -2080,16 +2153,15 @@
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-6 shadow-xl">
                             <div class="flex items-center justify-between mb-5 text-xs">
                                 <span class="font-semibold text-[#58796b] uppercase">Question ${P.index + 1} of ${total}</span>
-                                <span class="font-semibold text-emerald-700">Score: ${practiceScore()} / ${answered}</span>
+                                <button onclick="practiceFlag()" class="font-semibold px-3 py-1 rounded-full border transition ${P.flagged[P.index] ? 'bg-amber-500/20 text-amber-700 border-amber-500/40' : 'bg-[#eef1ec] text-[#58796b] border-[#d9d4c3] hover:text-[#0b3d2b]'}">${P.flagged[P.index] ? '🚩 Flagged' : '🏳️ Flag for review'}</button>
                             </div>
                             ${q.passage ? `<div class="mb-5 p-4 rounded-xl bg-[#faf8f2] border border-[#e8e2d2] text-sm text-[#2f5546] leading-relaxed max-h-64 overflow-y-auto"><p class="text-xs font-semibold text-[#0b5a3c] uppercase mb-2">Read the passage and answer the question</p>${esc(q.passage)}</div>` : ''}
                             ${novelTag(q)}
                             <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-5 leading-relaxed">${fq(q.question, q.subject)}</h3>
                             <div class="space-y-3">${opts}</div>
-                            ${feedback}
                             <div class="flex items-center justify-between mt-6 pt-5 border-t border-[#e8e2d2]">
                                 <button onclick="practicePrev()" ${P.index === 0 ? 'disabled' : ''} class="px-5 py-3 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-sm hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
-                                <button onclick="practiceNext()" class="px-6 py-3 rounded-xl font-semibold text-sm transition ${done ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20' : 'bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546]'}">${isLast ? 'Finish' : (done ? 'Next →' : 'Skip →')}</button>
+                                <button onclick="practiceNext()" class="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 transition">${isLast ? 'Submit' : 'Next →'}</button>
                             </div>
                         </div>
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 mt-4 shadow-xl">
@@ -2097,9 +2169,9 @@
                                 <h4 class="font-bold text-[#0b3d2b] text-sm uppercase tracking-wide">Question numbers</h4>
                                 <span class="text-xs text-[#58796b]">${answered} / ${total} answered</span>
                             </div>
-                            <p class="text-xs text-[#58796b] mt-1">Tap any number to jump to that question. Green = correct, red = wrong.</p>
+                            <p class="text-xs text-[#58796b] mt-1">Tap any number to jump to that question.</p>
                             ${groups}
-                            <button onclick="practiceFinishNow()" class="mt-5 w-full bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold text-sm py-3 rounded-xl transition">Finish practice</button>
+                            <button onclick="practiceFinishNow()" class="mt-5 w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold text-sm py-3 rounded-xl transition">Submit practice</button>
                         </div>
                     </div>
                 </div>`;
@@ -2192,14 +2264,15 @@
             setView('waecPracticeSetup');
             window.scrollTo(0, 0);
         }
-        function setWpCount(n) { state.wpsetup.count = n; render(); }
+        const WAEC_PRACTICE_QS = 10;   // WAEC/NECO/GCE practice is always 10 questions
+        function setWpCount(n) { state.wpsetup.count = WAEC_PRACTICE_QS; render(); }
         function pickWpSubject(sub) { state.wpsetup.subject = sub; render(); }
 
         function renderWaecPracticeSetup() {
             const ws = state.wpsetup;
             const subs = ['english', ...OTHER_SUBJECTS];
             const avail = availableFor(ws.subject);
-            const n = Math.min(ws.count, avail);
+            const n = Math.min(WAEC_PRACTICE_QS, avail);
             const btn = sub => {
                 const on = ws.subject === sub;
                 return `<button onclick="pickWpSubject('${sub}')" class="text-left p-3 rounded-xl border text-sm font-semibold transition ${on ? 'bg-[#e1f3e8] border-[#066c43] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
@@ -2216,12 +2289,10 @@
                     <div class="max-w-xl w-full bg-white border border-[#e8e2d2] rounded-2xl p-6 sm:p-8 shadow-xl">
                         <span class="bg-amber-400/10 text-amber-800 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider border border-amber-400/20">WAEC/NECO/GCE practice</span>
                         <h2 class="text-2xl font-bold mt-3">Practise one subject</h2>
-                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed at WAEC/NECO/GCE pace, and you see the correct answer after every question.</p>
+                        <p class="text-[#58796b] text-sm mt-1 leading-relaxed">Timed at WAEC/NECO/GCE pace. The correct answers and explanations are shown after you submit.</p>
                         <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Subject</p>
                         <div class="grid grid-cols-2 gap-2">${subs.map(btn).join('')}</div>
-                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Number of questions</p>
-                        <div class="grid grid-cols-4 gap-2">${[10, 20, 40, 60].map(c => `<button onclick="setWpCount(${c})" class="${pill(ws.count === c)}">${c}</button>`).join('')}</div>
-                        ${avail < ws.count ? `<p class="text-xs text-amber-800 mt-2">Only ${avail} ${esc(subjLabel(ws.subject))} questions are available right now.</p>` : ''}
+                        ${avail < WAEC_PRACTICE_QS ? `<p class="text-xs text-amber-800 mt-2">Only ${avail} ${esc(subjLabel(ws.subject))} questions are available right now.</p>` : ''}
                         <div class="mt-5 text-sm bg-[#faf8f2] border border-[#e8e2d2] rounded-xl p-3 leading-relaxed">
                             ⏱️ <strong>${n} questions</strong> · about <strong>${Math.max(1, Math.round(n * WAEC_PRACTICE_SECS_PER_Q / 60))} minutes</strong> (${WAEC_PRACTICE_SECS_PER_Q} seconds per question).
                         </div>
@@ -2237,7 +2308,7 @@
             if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); showDashboard(); return; }
             const ws = state.wpsetup;
             const sub = ws.subject;
-            const raw = sub === 'english' ? buildPracticeEnglish(ws.count) : getRandomQuestions(sub, ws.count);
+            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS) : getRandomQuestions(sub, WAEC_PRACTICE_QS);
             const items = raw.map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = items.length * WAEC_PRACTICE_SECS_PER_Q;
@@ -2802,7 +2873,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
