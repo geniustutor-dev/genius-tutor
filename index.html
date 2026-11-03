@@ -45,6 +45,18 @@
         @media (min-width: 1280px) { html { font-size: 17px; } }
         @media (min-width: 1700px) { html { font-size: 18px; } }
     </style>
+
+    <style>
+        /* Prevent text selection/copying across the Genius Tutor page */
+        html, body, body * {
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            -webkit-touch-callout: none !important;
+        }
+    </style>
+
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
     <div id="app" class="flex-1 flex flex-col"></div>
@@ -54,6 +66,7 @@
     <script src="chemistry.js"></script>
     <script src="physics.js"></script>
     <script src="mathematics.js"></script>
+    <script src="citizenship.js"></script>
     <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -124,7 +137,13 @@
 
         // Real question banks loaded from separate files.
         // Rows look like: [question, CORRECT answer, wrong1, wrong2, wrong3]
-        const REAL_BANKS = { biology: window.BIOLOGY, chemistry: window.CHEMISTRY, physics: window.PHYSICS, mathematics: window.MATHEMATICS };
+        const REAL_BANKS = {
+            biology: window.BIOLOGY,
+            chemistry: window.CHEMISTRY,
+            physics: window.PHYSICS,
+            mathematics: window.MATHEMATICS,
+            citizenship: window.CITIZENSHIP
+        };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
         function shuffleArr(a) {
@@ -620,7 +639,7 @@
                             <div class="grid md:grid-cols-2 gap-10 items-center py-8 md:py-14">
                                 <div>
                                     <span class="inline-block text-[11px] font-semibold tracking-wider text-[#f4b731] bg-white/10 rounded-full px-3 py-1">JAMB/WAEC/NECO/GCE PRACTICE</span>
-                                    <h1 class="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] mt-4">Walk into your JAMB/WAEC/NECO/GCE exam already used to the screen.</h1>
+                                    <h1 class="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.05] mt-4">Walk into your CBT EXAM hall already used to the screen.</h1>
                                     <p class="text-sm sm:text-base text-white/80 mt-5 max-w-md leading-relaxed">Take a full timed CBT exam, or practise at real exam speed in the subjects you choose. Enjoy a question palette like the real exam hall, instant marking and a complete answer review with explanations after every attempt.</p>
                                     <div class="flex flex-wrap gap-3 mt-7">
                                         <button onclick="setView('register')" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-6 py-3 transition">Create free account</button>
@@ -2862,5 +2881,25 @@
             window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
         }
     </script>
+
+    <script>
+        // Discourage copying text from the page (browser-level protection is not absolute).
+        document.addEventListener('copy', function (event) {
+            event.preventDefault();
+        }, true);
+        document.addEventListener('cut', function (event) {
+            event.preventDefault();
+        }, true);
+        document.addEventListener('contextmenu', function (event) {
+            event.preventDefault();
+        }, true);
+        document.addEventListener('keydown', function (event) {
+            const key = (event.key || '').toLowerCase();
+            if ((event.ctrlKey || event.metaKey) && ['c', 'x', 'a'].includes(key)) {
+                event.preventDefault();
+            }
+        }, true);
+    </script>
+
 </body>
 </html>
