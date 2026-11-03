@@ -27,6 +27,19 @@
         html { -webkit-text-size-adjust: 100%; }
         body { font-family: 'Inter', sans-serif; overflow-x: hidden; min-height: 100vh; min-height: 100dvh; }
         .font-display { font-family: 'Bricolage Grotesque', 'Inter', sans-serif; }
+        /* equation-style maths: stacked fractions, roots, powers, matrices */
+        .mfrac { display: inline-flex; flex-direction: column; align-items: center; vertical-align: middle; margin: 0 .18em; line-height: 1.25; text-align: center; }
+        .mfn { border-bottom: 1.5px solid currentColor; padding: 0 .25em .08em; }
+        .mfd { padding: .08em .25em 0; }
+        .mrad { white-space: nowrap; }
+        .mrb { border-top: 1.5px solid currentColor; padding: 0 .12em; margin-left: -.02em; }
+        .msup { font-size: .75em; line-height: 0; vertical-align: super; }
+        .mmat { display: inline-grid; vertical-align: middle; gap: .2em 1em; padding: .2em .6em; margin: 0 .25em; text-align: center; line-height: 1.3;
+            border-left: 2px solid currentColor; border-right: 2px solid currentColor;
+            background: linear-gradient(currentColor, currentColor) left top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) left bottom / .4em 2px no-repeat,
+                        linear-gradient(currentColor, currentColor) right top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) right bottom / .4em 2px no-repeat; }
+        .mfig { display: block; margin: .4rem 0 .9rem; }
+        .mfig svg { display: block; }
         img, svg { max-width: 100%; }
         button { touch-action: manipulation; }
         @media (min-width: 1280px) { html { font-size: 17px; } }
@@ -121,10 +134,17 @@
             }
             return a;
         }
-        function toItem(row, passage) {
-            const [question, correct, ...wrong] = row;
-            const opts = shuffleArr([correct, ...wrong]);
-            return { question, options: opts, answer: opts.indexOf(correct), passage: passage || null };
+        // A short fingerprint of a question, used to remember which ones a student has already practised.
+        function keyOf(row) {
+            let h = 5381; const t = row[0] + '|' + row[1];
+            for (let i = 0; i < t.length; i++) h = ((h << 5) + h + t.charCodeAt(i)) | 0;
+            return (h >>> 0).toString(36);
+        }
+        // Rows are [question, CORRECT, wrong1, wrong2, wrong3, topic (optional)]
+        function toItem(row, passage, extra) {
+            const [question, correct, w1, w2, w3, topic] = row;
+            const opts = shuffleArr([correct, w1, w2, w3].filter(x => x !== undefined));
+            return { question, options: opts, answer: opts.indexOf(correct), passage: passage || null, topic: topic || '', key: keyOf(row), ...(extra || {}) };
         }
         function englishExamSize() {
             const E = window.ENGLISH;
@@ -140,7 +160,7 @@
             shuffleArr(Object.keys(E.passages || {})).slice(0, 2).forEach(k => {
                 E.passages[k].qs.forEach(r => out.push(toItem(r, E.passages[k].text)));
             });
-            const novel = shuffleArr(E.novel || []).slice(0, 5).map(r => toItem(r));
+            const novel = shuffleArr(E.novel || []).slice(0, 5).map(r => toItem(r, null, { novel: true }));
             const need = 60 - out.length - novel.length;
             const general = shuffleArr(E.general || []).slice(0, Math.max(0, need)).map(r => toItem(r));
             return [...out, ...general, ...novel];
@@ -197,6 +217,163 @@
             return all.slice(0, count);
         }
 
+        // --- MATHS DISPLAY: stacked fractions, matrices in rows and columns, roots, powers and diagrams ---
+        // Used only for General Mathematics. Write questions in plain text:
+        //   fractions: 3/4, 2 1/2, (x + 1)/(x − 2)     matrices: [1 2; 3 4]  (rows split by ;)
+        //   powers: 8^(2/3)     roots: √3, √(A/π)      diagrams: {{fig:rtri|8 cm|6 cm|x}}
+        const MFG = '#0b5a3c', MTX = '#0b3d2b', MFL = '#e7f3ec';
+        function mathToHtml(raw) {
+            const store = [];
+            const hold = h => '\uE000' + (store.push(h) - 1) + '\uE001';
+            const unhold = s => { let p; do { p = s; s = s.replace(/\uE000(\d+)\uE001/g, (_, i) => store[+i]); } while (s !== p); return s; };
+            const CH = '[\\wπθ√²³⁴⁵⁶⁷⁸⁹⁰¹⁻⁺ˣ₀₁₂₃₄₅₆₇₈₉\\uE000\\uE001]+';
+            const TERM = CH + '(?:\\.' + CH + ')*';   // a decimal point only counts when digits follow it, so "3/4." keeps its full stop outside
+            const FRAC = new RegExp('(\\([^()]*\\)|' + TERM + ')/(\\([^()]*\\)|' + TERM + ')', 'g');
+            const strip = t => t.charAt(0) === '(' ? t.slice(1, -1) : t;
+            const frac = (n, d) => '<span class="mfrac"><span class="mfn">' + n + '</span><span class="mfd">' + d + '</span></span>';
+            const rad = inner => '<span class="mrad">√<span class="mrb">' + inner + '</span></span>';
+            function matrix(body) {
+                const rows = body.split(';').map(r => r.trim()).filter(Boolean).map(r => r.indexOf(',') >= 0 ? r.split(/\s*,\s*/) : r.split(/\s+/));
+                const cols = Math.max(...rows.map(r => r.length));
+                return '<span class="mmat" style="grid-template-columns:repeat(' + cols + ',auto)">' +
+                    rows.map(r => { while (r.length < cols) r.push(''); return r.map(e => '<span>' + conv(e) + '</span>').join(''); }).join('') + '</span>';
+            }
+            function conv(s) {
+                s = s.replace(/\b(km|m|cm|mm|kg|g|ml|l)\/(h|s|min|hr|l)\b/g, m => hold(m));   // units such as km/h stay as written
+                s = s.replace(/\[([^\[\]&\uE000\uE001]*;[^\[\]&\uE000\uE001]*)\]/g, (_, b) => hold(matrix(b)));
+                s = s.replace(/√\(([^()]*)\)/g, (_, a) => hold(rad(conv(a))));
+                s = s.replace(/\^\(([^()]*)\)/g, (_, a) => hold('<sup class="msup">' + conv(a) + '</sup>'));
+                s = s.replace(/\^([−-]?\w+(?:\.\w+)?)/g, (_, a) => hold('<sup class="msup">' + a + '</sup>'));
+                s = s.replace(/(^|[^\w.\/])(\d+) (\d+)\/(\d+)(?![\w\/])/g, (_, p, w, n, d) => p + w + hold(frac(n, d)));
+                s = s.replace(FRAC, (_, n, d) => hold(frac(conv(strip(n)), conv(strip(d)))));
+                s = s.replace(/√(\w+(?:\.\w+)?[²³]*)/g, (_, a) => hold(rad(a)));
+                return s;
+            }
+            return unhold(conv(esc(raw)));
+        }
+
+        const mt = (x, y, t, o = {}) => t ? '<text x="' + x + '" y="' + y + '" text-anchor="' + (o.a || 'middle') + '" font-size="' + (o.s || 13) + '" fill="' + (o.c || MTX) + '"' + (o.i ? ' font-style="italic"' : '') + (o.h ? ' stroke="#fff" stroke-width="3" paint-order="stroke"' : '') + '>' + esc(t) + '</text>' : '';
+        const msvg = (w, h, inner, x0 = 0) => '<svg viewBox="' + x0 + ' 0 ' + w + ' ' + h + '" width="' + Math.round(w * 1.25) + '" style="max-width:100%;height:auto" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="diagram for the question" font-family="Inter, sans-serif">' + inner + '</svg>';
+        const mln = (x1, y1, x2, y2, w = 2, extra = '') => '<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 + '" ' + (extra.indexOf('stroke=') >= 0 ? '' : 'stroke="' + MFG + '" ') + 'stroke-width="' + w + '" stroke-linecap="round" ' + extra + '/>';
+        const mpoly = (pts, fill = MFL) => '<polygon points="' + pts.map(p => p.join(',')).join(' ') + '" fill="' + fill + '" stroke="' + MFG + '" stroke-width="2" stroke-linejoin="round"/>';
+        const mdot = (x, y) => '<circle cx="' + x + '" cy="' + y + '" r="3.2" fill="' + MFG + '"/>';
+        const mrt = d => '<path d="' + d + '" fill="none" stroke="' + MFG + '" stroke-width="1.5"/>';
+        const num = v => parseFloat(String(v).replace('−', '-'));
+
+        const MFIG = {
+            // right-angled triangle: base | height | hypotenuse | angle at left corner | angle at top
+            rtri: a => msvg(260, 185, mpoly([[30, 150], [200, 150], [200, 40]]) + mrt('M190 150 L190 140 L200 140') +
+                mt(115, 172, a[0]) + mt(212, 100, a[1], { a: 'start' }) + mt(104, 84, a[2], { a: 'end' }) + mt(74, 144, a[3]) + mt(186, 74, a[4], { a: 'end' })),
+            // general triangle ABC: side BC | side CA | side AB | angle A | angle B | angle C
+            tri: a => msvg(270, 185, mpoly([[130, 28], [30, 150], [240, 150]]) +
+                mt(130, 17, 'A') + mt(18, 162, 'B') + mt(254, 162, 'C') +
+                mt(135, 174, a[0]) + mt(202, 84, a[1], { a: 'start' }) + mt(62, 84, a[2], { a: 'end' }) +
+                mt(130, 62, a[3]) + mt(68, 143, a[4]) + mt(202, 143, a[5])),
+            // rectangle: length | width
+            rect: a => msvg(260, 170, '<rect x="40" y="30" width="170" height="100" fill="' + MFL + '" stroke="' + MFG + '" stroke-width="2"/>' + mt(125, 152, a[0]) + mt(222, 86, a[1], { a: 'start' })),
+            // trapezium: top | bottom | height
+            trap: a => msvg(260, 175, mpoly([[75, 35], [175, 35], [225, 135], [30, 135]]) + mln(75, 35, 75, 135, 1.5, 'stroke-dasharray="5 4"') + mrt('M85 135 L85 125 L75 125') +
+                mt(125, 26, a[0]) + mt(127, 156, a[1]) + mt(82, 92, a[2], { a: 'start' })),
+            // circle: r or d | label
+            circle: a => msvg(230, 185, '<circle cx="115" cy="92" r="72" fill="' + MFL + '" stroke="' + MFG + '" stroke-width="2"/>' +
+                (a[0] === 'd' ? mln(43, 92, 187, 92) + mt(115, 83, a[1]) : mln(115, 92, 187, 92) + mt(151, 83, a[1])) + mdot(115, 92) + mt(104, 108, 'O')),
+            // angle at the centre and at the circumference on the same chord: centre label | circumference label
+            circang: a => msvg(230, 190, '<circle cx="110" cy="100" r="75" fill="' + MFL + '" stroke="' + MFG + '" stroke-width="2"/>' +
+                mln(110, 100, 48.6, 143) + mln(110, 100, 171.4, 143) + mln(110, 25, 48.6, 143) + mln(110, 25, 171.4, 143) +
+                mdot(110, 100) + mt(101, 97, 'O') + mt(36, 153, 'A') + mt(184, 153, 'B') + mt(110, 16, 'P') + mt(110, 128, a[0]) + mt(110, 62, a[1])),
+            // sector: angle | radius
+            sector: a => {
+                const th = Math.max(20, Math.min(180, num(a[0]) || 90)), r = 95, cx = 50, cy = 125, rd = th * Math.PI / 180;
+                const x2 = cx + r * Math.cos(rd), y2 = cy - r * Math.sin(rd);
+                return msvg(190, 150, '<path d="M' + cx + ' ' + cy + ' L' + (cx + r) + ' ' + cy + ' A' + r + ' ' + r + ' 0 0 0 ' + x2.toFixed(1) + ' ' + y2.toFixed(1) + ' Z" fill="' + MFL + '" stroke="' + MFG + '" stroke-width="2" stroke-linejoin="round"/>' +
+                    mdot(cx, cy) + mt(cx + 44 * Math.cos(rd / 2), cy - 44 * Math.sin(rd / 2) + 4, a[0]) + mt(cx + r / 2, cy + 17, a[1]));
+            },
+            // two parallel lines cut by a transversal. Labels as  value@slot  where slot = a1..a4 (top line) or b1..b4 (bottom line)
+            // slots go round the crossing: 1 above-left, 2 above-right, 3 below-right, 4 below-left (2 and 4 are acute, 1 and 3 are obtuse)
+            parallel: a => {
+                const C = { a: [140, 55], b: [102.5, 120] }, S = { 1: [120, 28], 2: [30, 34], 3: [300, 28], 4: [210, 34] };
+                let lab = '';
+                a.forEach(s => {
+                    const m = s.match(/^(.*)@([ab])([1-4])$/); if (!m) return;
+                    const c = C[m[2]], p = S[m[3]], t = p[0] * Math.PI / 180;
+                    lab += mt((c[0] + p[1] * Math.cos(t)).toFixed(1), (c[1] - p[1] * Math.sin(t) + 4).toFixed(1), m[1]);
+                });
+                return msvg(270, 175, mln(15, 55, 255, 55) + mln(15, 120, 255, 120) + mln(82.5, 154.6, 160, 20.4) +
+                    '<path d="M26 49 L32 55 L26 61 M26 114 L32 120 L26 126" fill="none" stroke="' + MFG + '" stroke-width="1.8"/>' + lab);
+            },
+            // bar chart: labels | values | title
+            bar: a => {
+                const L = (a[0] || '').split(','), V = (a[1] || '').split(',').map(num), n = L.length, mx = Math.max(...V);
+                const step = mx <= 10 ? 2 : mx <= 30 ? 5 : mx <= 60 ? 10 : mx <= 150 ? 20 : 50, top = Math.ceil(mx / step) * step;
+                const x0 = 44, x1 = 292, y0 = 168, y1 = 34, slot = (x1 - x0) / n, bw = slot * 0.56;
+                let g = '';
+                for (let k = 0; k <= top; k += step) { const y = y0 - k / top * (y0 - y1); g += mln(x0, y, x1, y, 1, 'stroke="#d9e3dd"') + mt(x0 - 7, y + 4, k, { a: 'end', s: 11 }); }
+                V.forEach((v, i) => { const h = v / top * (y0 - y1), x = x0 + slot * i + (slot - bw) / 2;
+                    g += '<rect x="' + x.toFixed(1) + '" y="' + (y0 - h).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="#169a66" stroke="' + MFG + '" stroke-width="1.5"/>' +
+                         mt((x + bw / 2).toFixed(1), (y0 - h - 5).toFixed(1), v, { s: 11 }) + mt((x + bw / 2).toFixed(1), y0 + 17, L[i], { s: 11 }); });
+                return msvg(310, 200, mt(175, 17, a[2], { s: 13 }) + g + mln(x0, y0, x1, y0) + mln(x0, y0, x0, y1));
+            },
+            // pie chart: labels | angles in degrees
+            pie: a => {
+                const L = (a[0] || '').split(','), V = (a[1] || '').split(',').map(num), tot = V.reduce((s, x) => s + x, 0) || 360;
+                const cols = ['#0b5a3c', '#f4b731', '#6fd3a4', '#c95f45', '#7b8fb5', '#b9a37a'], cx = 150, cy = 100, r = 62;
+                let ang = -90, g = '';
+                V.forEach((v, i) => {
+                    const a0 = ang * Math.PI / 180, a1 = (ang + v / tot * 360) * Math.PI / 180, mid = (a0 + a1) / 2;
+                    g += '<path d="M' + cx + ' ' + cy + ' L' + (cx + r * Math.cos(a0)).toFixed(1) + ' ' + (cy + r * Math.sin(a0)).toFixed(1) + ' A' + r + ' ' + r + ' 0 ' + (v / tot > 0.5 ? 1 : 0) + ' 1 ' + (cx + r * Math.cos(a1)).toFixed(1) + ' ' + (cy + r * Math.sin(a1)).toFixed(1) + ' Z" fill="' + cols[i % cols.length] + '" stroke="#fff" stroke-width="2"/>';
+                    const c = Math.cos(mid);
+                    g += mt((cx + (r + 9) * c).toFixed(1), (cy + (r + 9) * Math.sin(mid) + 4).toFixed(1), L[i] + ' ' + V[i] + '°', { a: c > 0.25 ? 'start' : c < -0.25 ? 'end' : 'middle', s: 12 });
+                    ang += v / tot * 360;
+                });
+                return msvg(300, 200, g);
+            },
+            // straight-line graph through two points: x1 | y1 | x2 | y2 | label 1 | label 2  (use - for minus inside the numbers)
+            graph: a => {
+                const p0 = [num(a[0]), num(a[1])], p1 = [num(a[2]), num(a[3])], lb = [a[4], a[5]];
+                const xs = [p0[0], p1[0], 0], ys = [p0[1], p1[1], 0];
+                const minx = Math.floor(Math.min(...xs)) - 1, maxx = Math.ceil(Math.max(...xs)) + 1, miny = Math.floor(Math.min(...ys)) - 1, maxy = Math.ceil(Math.max(...ys)) + 1;
+                const W = 290, H = 220, ox = 22, oy = 14, s = Math.min((W - ox - 30) / (maxx - minx), (H - oy - 22) / (maxy - miny));
+                const X = x => ox + (x - minx) * s, Y = y => oy + (maxy - y) * s;
+                let g = '';
+                for (let i = minx; i <= maxx; i++) g += mln(X(i), Y(miny), X(i), Y(maxy), 1, 'stroke="#e1eae4"');
+                for (let j = miny; j <= maxy; j++) g += mln(X(minx), Y(j), X(maxx), Y(j), 1, 'stroke="#e1eae4"');
+                g += mln(X(minx), Y(0), X(maxx), Y(0), 1.6, 'stroke="#2f5546"') + mln(X(0), Y(miny), X(0), Y(maxy), 1.6, 'stroke="#2f5546"');
+                for (let i = minx; i <= maxx; i++) if (i) g += mt(X(i), Y(0) + 13, i < 0 ? '−' + (-i) : i, { s: 10, c: '#58796b', h: 1 });
+                for (let j = miny; j <= maxy; j++) if (j) g += mt(X(0) - 5, Y(j) + 4, j < 0 ? '−' + (-j) : j, { a: 'end', s: 10, c: '#58796b', h: 1 });
+                g += mt(X(maxx) + 9, Y(0) + 4, 'x', { i: 1, a: 'start' }) + mt(X(0) + 8, oy - 3, 'y', { i: 1, a: 'start' });
+                const d = [p1[0] - p0[0], p1[1] - p0[1]];
+                let t0 = -1e9, t1 = 1e9;
+                [[p0[0], d[0], minx, maxx], [p0[1], d[1], miny, maxy]].forEach(([p, dd, lo, hi]) => {
+                    if (!dd) return; const u = (lo - p) / dd, v = (hi - p) / dd; t0 = Math.max(t0, Math.min(u, v)); t1 = Math.min(t1, Math.max(u, v));
+                });
+                g += '<line x1="' + X(p0[0] + t0 * d[0]).toFixed(1) + '" y1="' + Y(p0[1] + t0 * d[1]).toFixed(1) + '" x2="' + X(p0[0] + t1 * d[0]).toFixed(1) + '" y2="' + Y(p0[1] + t1 * d[1]).toFixed(1) + '" stroke="#c95f45" stroke-width="2.4" stroke-linecap="round"/>';
+                [p0, p1].forEach((p, i) => { g += mdot(X(p[0]), Y(p[1])) + (() => { const left = p[0] < 0 || X(p[0]) + 62 > W; return mt(X(p[0]) + (left ? -7 : 7), Y(p[1]) + (p[1] < 0 ? 17 : -8), lb[i], { a: left ? 'end' : 'start', s: 12, h: 1 }); })(); });
+                return msvg(W, H, g);
+            },
+            // Venn diagram of two sets: A only | both | B only | neither
+            venn: a => msvg(250, 165, '<rect x="8" y="8" width="234" height="148" rx="4" fill="none" stroke="' + MFG + '" stroke-width="1.5"/>' +
+                '<circle cx="98" cy="84" r="55" fill="#169a6633" stroke="' + MFG + '" stroke-width="2"/><circle cx="152" cy="84" r="55" fill="#f4b73144" stroke="#b07d10" stroke-width="2"/>' +
+                mt(58, 36, 'A', { s: 15 }) + mt(192, 36, 'B', { s: 15 }) + mt(70, 90, a[0], { s: 15 }) + mt(125, 90, a[1], { s: 15 }) + mt(180, 90, a[2], { s: 15 }) + mt(26, 144, a[3], { s: 15 })),
+            // cuboid: length | width | height
+            cuboid: a => msvg(254, 175, '<polygon points="30,65 150,65 190,35 70,35" fill="#f4faf6" stroke="' + MFG + '" stroke-width="2" stroke-linejoin="round"/>' +
+                '<polygon points="150,65 190,35 190,115 150,145" fill="#d6ecdf" stroke="' + MFG + '" stroke-width="2" stroke-linejoin="round"/>' +
+                '<rect x="30" y="65" width="120" height="80" fill="' + MFL + '" stroke="' + MFG + '" stroke-width="2"/>' +
+                mln(30, 145, 70, 115, 1.4, 'stroke-dasharray="4 4"') + mln(70, 115, 70, 35, 1.4, 'stroke-dasharray="4 4"') + mln(70, 115, 190, 115, 1.4, 'stroke-dasharray="4 4"') +
+                mt(90, 164, a[0]) + mt(22, 109, a[2], { a: 'end' }) + mt(178, 146, a[1], { a: 'start' }), -24)
+        };
+        function figHtml(spec) {
+            const p = spec.split('|').map(x => x.trim()), f = MFIG[p.shift()];
+            return f ? '<span class="mfig">' + f(p) + '</span>' : '';
+        }
+        // Question / option text: maths gets the equation-style display, every other subject stays plain text.
+        function fq(text, sub) {
+            if (sub !== 'mathematics') return esc(text);
+            return String(text ?? '').split(/\{\{fig:([^}]*)\}\}/).map((x, i) => i % 2 ? figHtml(x) : mathToHtml(x)).join('');
+        }
+        function novelTag(q) {
+            return q && q.novel ? '<p class="inline-block text-[11px] font-semibold text-[#0b5a3c] bg-[#e1f3e8] border border-[#bfe0cd] rounded-full px-3 py-1 mb-3">📖 From the JAMB novel: THE LEKKI HEADMASTER</p>' : '';
+        }
+
         function friendlyError(err) {
             const map = {
                 'auth/email-already-in-use': 'An account with this email already exists. Please log in.',
@@ -249,7 +426,7 @@
                 if (state.currentView === 'loading') { state.currentView = 'home'; render(); }
                 return;
             }
-            if (awayTooLong()) { await forceLogout(AWAY_NOTICE); return; }
+            if (awayTooLong() && !readResume(fbUser.uid)) { await forceLogout(AWAY_NOTICE); return; }
             try {
                 await loadProfile(fbUser);
                 touchActive();
@@ -350,6 +527,7 @@
             if (state.currentView === 'exam') updateTimerDisplay();
             if (state.currentView === 'practice') updatePracticeTimer();
             if (state.currentView === 'waec') updateWaecTimer();
+            saveProgress();
             updateInstallPopup();
         }
 
@@ -1203,12 +1381,12 @@
                                     </button>
                                 </div>
                                 ${q.passage ? `<div class="mb-5 p-4 rounded-xl bg-[#faf8f2] border border-[#e8e2d2] text-sm text-[#2f5546] leading-relaxed max-h-64 overflow-y-auto"><p class="text-xs font-semibold text-[#0b5a3c] uppercase mb-2">Read the passage and answer the question</p>${esc(q.passage)}</div>` : ''}
-                                <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-6 leading-relaxed">${esc(q.question)}</h3>
+                                ${novelTag(q)}<h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-6 leading-relaxed">${fq(q.question, state.activeSubject)}</h3>
                                 <div class="space-y-3">
                                     ${q.options.map((opt, idx) => `
                                         <label onclick="selectOption(${idx})" class="flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${selectedOpt === idx ? 'bg-[#e1f3e8] border-[#0b5a3c] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
                                             <span class="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs ${selectedOpt === idx ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${String.fromCharCode(65 + idx)}</span>
-                                            <span class="text-sm font-medium">${esc(opt)}</span>
+                                            <span class="text-sm font-medium">${fq(opt, state.activeSubject)}</span>
                                         </label>`).join('')}
                                 </div>
                             </div>
@@ -1266,7 +1444,7 @@
             state.examSubjects.forEach(sub => {
                 state.examData[sub].forEach((q, idx) => {
                     const c = state.answers[`${sub}-${idx}`];
-                    items.push({ s: sub, q: q.question, o: q.options, a: q.answer, c: c === undefined ? -1 : c, p: q.passage || null });
+                    items.push({ s: sub, q: q.question, o: q.options, a: q.answer, c: c === undefined ? -1 : c, p: q.passage || null, n: q.novel ? 1 : 0 });
                 });
             });
             return items;
@@ -1275,6 +1453,7 @@
         async function submitExam() {
             if (state.currentView !== 'exam') return;
             if (state.timerInterval) clearInterval(state.timerInterval);
+            clearProgress();
             const r = computeResult();
             state.saveError = false;
             setView('result');
@@ -1350,6 +1529,65 @@
                 </div>`;
         }
 
+        // --- CONTINUE AN UNFINISHED ATTEMPT (exam, WAEC paper and both practice modes) ---
+        // The attempt is saved on this phone/computer after every answer. The student comes straight back to it after leaving the page.
+        const RESUME_MAX_MS = { exam: 86400000, waec: 86400000, practice: 3 * 86400000, waecPractice: 3 * 86400000 };
+        function resumeKey(uid) { return 'gt_resume_' + uid; }
+        function readResume(uid) {
+            try {
+                const snap = JSON.parse(localStorage.getItem(resumeKey(uid)) || 'null');
+                if (!snap || !snap.kind) return null;
+                if (Date.now() - snap.savedAt > (RESUME_MAX_MS[snap.kind] || 86400000)) { localStorage.removeItem(resumeKey(uid)); return null; }
+                return snap;
+            } catch (_) { return null; }
+        }
+        function clearProgress() { try { if (state.user) localStorage.removeItem(resumeKey(state.user.uid)); } catch (_) {} }
+        function saveProgress() {
+            try {
+                if (!state.user) return;
+                const v = state.currentView;
+                let snap = null;
+                if (v === 'exam') {
+                    snap = { kind: 'exam', examSubjects: state.examSubjects, examData: state.examData, activeSubject: state.activeSubject, currentIndex: state.currentIndex,
+                        answers: state.answers, flagged: state.flagged, deadline: state.deadline, serverOffset: state.serverOffset, sessionId: state.sessionId };
+                } else if (v === 'practice' && state.practice) {
+                    const { timerRef, ...P } = state.practice;
+                    snap = { kind: P.style === 'waec' ? 'waecPractice' : 'practice', P };
+                } else if (v === 'waec' && state.waec) {
+                    snap = { kind: 'waec', W: state.waec };
+                }
+                if (!snap) return;
+                snap.savedAt = Date.now();
+                localStorage.setItem(resumeKey(state.user.uid), JSON.stringify(snap));
+            } catch (e) { console.error('Could not save progress', e); }
+        }
+        // returns true when an attempt was reopened
+        function resumeAttempt() {
+            const s = state.user && readResume(state.user.uid);
+            if (!s) return false;
+            if (s.kind === 'exam') {
+                Object.assign(state, { examSubjects: s.examSubjects, examData: s.examData, activeSubject: s.activeSubject, currentIndex: s.currentIndex,
+                    answers: s.answers || {}, flagged: s.flagged || {}, deadline: s.deadline, serverOffset: s.serverOffset || 0, sessionId: s.sessionId, saveError: false });
+                setView('exam', 'Welcome back. Your exam continues where you stopped, and the clock kept running.');
+                startTimer();
+            } else if (s.kind === 'waec') {
+                state.waec = s.W;
+                setView('waec');
+                startWaecTimer();
+            } else {
+                if (!hasPracticeAccess()) { clearProgress(); return false; }
+                // practice time is paused while the student is away
+                state.practice = { ...s.P, deadline: Date.now() + Math.max(1, s.P.timeLeft) * 1000, timedOut: false };
+                setView('practice');
+                startPracticeTimer();
+            }
+            window.scrollTo(0, 0);
+            return true;
+        }
+        setInterval(saveProgress, 10000);
+        window.addEventListener('pagehide', saveProgress);
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveProgress(); });
+
 // --- PROGRESS, HISTORY AND ANSWER REVIEW ---
         // True when the 3 free days are over and the student has no active pass (admins and pass-check errors never lock).
         function isLockedOut() {
@@ -1386,6 +1624,7 @@
             if (!state.user) { setView('dashboard'); return; }
             if (state.pass === null) { setView('loading'); await loadPass(); }
             if (isLockedOut()) { setView('locked'); window.scrollTo(0, 0); return; }
+            if (resumeAttempt()) return;
             setView('dashboard');
             if (state.history === null) {
                 state.leaderboard = null;
@@ -1498,7 +1737,7 @@
                     return `
                         <div class="flex items-start gap-3 p-3 rounded-xl border ${cls}">
                             <span class="w-6 h-6 shrink-0 rounded-md flex items-center justify-center font-bold text-xs bg-white border border-[#e8e2d2]">${String.fromCharCode(65 + idx)}</span>
-                            <div class="text-sm"><span>${esc(opt)}</span>${tag ? `<p class="text-[11px] font-semibold mt-0.5">${tag}</p>` : ''}</div>
+                            <div class="text-sm"><span>${fq(opt, i.s)}</span>${tag ? `<p class="text-[11px] font-semibold mt-0.5">${tag}</p>` : ''}</div>
                         </div>`;
                 }).join('');
                 return `${passageHtml}
@@ -1507,7 +1746,7 @@
                             <span class="text-[11px] font-semibold uppercase text-[#0b5a3c]">${esc(i.s)} · Question ${counter[i.s]}</span>
                             <span class="text-xs font-semibold ${status[1]}">${status[0]}</span>
                         </div>
-                        <h3 class="text-base font-medium text-[#0b3d2b] mb-4 leading-relaxed">${esc(i.q)}</h3>
+                        ${i.n ? novelTag({ novel: true }) : ''}<h3 class="text-base font-medium text-[#0b3d2b] mb-4 leading-relaxed">${fq(i.q, i.s)}</h3>
                         <div class="space-y-2">${opts}</div>
                     </div>`;
             }).join('');
@@ -1541,6 +1780,58 @@
             return 125;
         }
 
+        // --- JAMB PRACTICE BUILDER: fixed size, topics in equal shares, no repeats until the bank is used up ---
+        const JAMB_PRACTICE = { english: 20, novel: 3, other: 10 };   // 20 English (3 from the novel), 10 from each other subject
+        function seenStore() { try { return JSON.parse(localStorage.getItem('gt_seen_' + state.user.uid) || '{}'); } catch (_) { return {}; } }
+        function saveSeen(o) { try { localStorage.setItem('gt_seen_' + state.user.uid, JSON.stringify(o)); } catch (_) {} }
+        function markSeen(bucket, key) {
+            const o = seenStore(), a = o[bucket] = o[bucket] || [];
+            if (!a.includes(key)) { a.push(key); saveSeen(o); }
+        }
+        // take one question from each topic in turn (in a random order) until we have enough
+        function roundRobin(list, count) {
+            const by = {};
+            list.forEach(x => { const t = x.r[5] || 'General'; (by[t] = by[t] || []).push(x); });
+            const topics = shuffleArr(Object.keys(by));
+            topics.forEach(t => { by[t] = shuffleArr(by[t]); });
+            const out = [];
+            while (out.length < count && topics.some(t => by[t].length)) {
+                for (const t of topics) { if (out.length >= count) break; const x = by[t].pop(); if (x) out.push(x); }
+            }
+            return out;
+        }
+        // rows: raw bank rows. bucket: name used to remember what this student has already practised.
+        function balancedPick(rows, count, bucket) {
+            const seen = new Set(seenStore()[bucket] || []);
+            const all = rows.map(r => ({ r, k: keyOf(r) }));
+            let picked = roundRobin(all.filter(x => !seen.has(x.k)), count);
+            if (picked.length < count) {
+                // every unseen question is used up: start a fresh round and top up from the old ones
+                const o = seenStore(); o[bucket] = []; saveSeen(o);
+                const got = new Set(picked.map(x => x.k));
+                picked = picked.concat(roundRobin(all.filter(x => !got.has(x.k)), count - picked.length));
+            }
+            return picked.map(x => x.r);
+        }
+        function buildJambPractice(subs) {
+            const items = [];
+            subs.forEach(sub => {
+                let part;
+                if (sub === 'english' && window.ENGLISH) {
+                    const E = window.ENGLISH;
+                    const gen = balancedPick(E.general || [], JAMB_PRACTICE.english - JAMB_PRACTICE.novel, 'english').map(r => toItem(r, null, { seenKey: 'english' }));
+                    const nov = balancedPick(E.novel || [], JAMB_PRACTICE.novel, 'english-novel').map(r => toItem(r, null, { novel: true, seenKey: 'english-novel' }));
+                    part = [...gen, ...nov];
+                } else if (REAL_BANKS[sub] && REAL_BANKS[sub].length) {
+                    part = balancedPick(REAL_BANKS[sub], JAMB_PRACTICE.other, sub).map(r => toItem(r, null, { seenKey: sub }));
+                } else {
+                    part = getRandomQuestions(sub, sub === 'english' ? JAMB_PRACTICE.english : JAMB_PRACTICE.other);
+                }
+                part.forEach(q => items.push({ ...q, subject: sub }));
+            });
+            return items;
+        }
+
         function buildPracticeEnglish(n) {
             const E = window.ENGLISH;
             if (!E) return getRandomQuestions('english', n);
@@ -1551,7 +1842,7 @@
                 E.passages[k].qs.forEach(r => out.push(toItem(r, E.passages[k].text)));
             }
             const pool = [...(E.general || []), ...(E.novel || [])];
-            const gen = shuffleArr(pool).slice(0, Math.max(0, n - out.length)).map(r => toItem(r));
+            const gen = shuffleArr(pool).slice(0, Math.max(0, n - out.length)).map(r => toItem(r, null, (E.novel || []).includes(r) ? { novel: true } : null));
             return [...out, ...gen];
         }
 
@@ -1596,8 +1887,7 @@
 
         function practicePlan() {
             const subs = ['english', ...state.psetup.subjects];
-            const n = state.psetup.count;
-            const total = subs.reduce((a, sub) => a + Math.min(n, availableFor(sub)), 0);
+            const total = subs.reduce((a, sub) => a + (sub === 'english' ? JAMB_PRACTICE.english : Math.min(JAMB_PRACTICE.other, availableFor(sub))), 0);
             return { subs, total, secs: total * PRACTICE_SECS_PER_Q };
         }
 
@@ -1605,7 +1895,7 @@
             const ps = state.psetup;
             const ready = ps.subjects.length === 3;
             const plan = practicePlan();
-            const short = plan.subs.filter(sub => availableFor(sub) < ps.count);
+            const short = plan.subs.filter(sub => sub !== 'english' && availableFor(sub) < JAMB_PRACTICE.other);
             const sample = plan.subs.some(sub => !hasRealQuestions(sub));
             const pill = (active) => `px-4 py-3 rounded-xl text-sm font-semibold border transition ${active ? 'bg-indigo-600 text-white border-[#0b5a3c]' : 'bg-[#faf8f2] text-[#2f5546] border-[#e8e2d2] hover:border-[#0b5a3c]'}`;
             return `
@@ -1617,9 +1907,11 @@
 
                         ${renderSubjectPicker('practice')}
 
-                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">Questions per subject</p>
-                        <div class="grid grid-cols-4 gap-2">
-                            ${[5, 10, 20, 40].map(n => `<button onclick="setPCount(${n})" class="${pill(ps.count === n)}">${n}</button>`).join('')}
+                        <p class="text-xs text-[#7a9588] uppercase font-semibold mt-6 mb-2">What you will get</p>
+                        <div class="text-sm bg-[#faf8f2] border border-[#e8e2d2] rounded-xl p-3 leading-relaxed space-y-1.5">
+                            <p><strong>English Language: ${JAMB_PRACTICE.english} questions.</strong> No comprehension passage. ${JAMB_PRACTICE.novel} of them come from the JAMB novel <em>THE LEKKI HEADMASTER</em> and the rest cover lexis, structure and oral English in equal shares.</p>
+                            <p><strong>Each of your other 3 subjects: ${JAMB_PRACTICE.other} questions,</strong> spread equally across its topics.</p>
+                            <p class="text-xs text-[#58796b]">Questions you have already practised are not repeated until you have been through the whole bank.</p>
                         </div>
                         ${short.map(sub => `<p class="text-xs text-amber-800 mt-2">Only ${availableFor(sub)} ${esc(subjLabel(sub))} questions are available right now.</p>`).join('')}
                         ${sample ? `<p class="text-xs text-[#8a6500] bg-[#f6ecc9] border border-[#ecdca4] rounded-lg p-3 mt-3 leading-relaxed">Subjects marked “Sample questions” do not have their real question bank yet.</p>` : ''}
@@ -1641,11 +1933,7 @@
             const ps = state.psetup;
             if (ps.subjects.length !== 3) return;
             const subs = ['english', ...ps.subjects];
-            const items = [];
-            subs.forEach(sub => {
-                const part = sub === 'english' ? buildPracticeEnglish(ps.count) : getRandomQuestions(sub, ps.count);
-                part.forEach(q => items.push({ ...q, subject: sub }));
-            });
+            const items = buildJambPractice(subs);
             if (!items.length) { alert('No questions are available for these subjects yet.'); return; }
             const secs = items.length * PRACTICE_SECS_PER_Q;
             state.practice = { subjects: subs, items, index: 0, answers: {}, secs, timeLeft: secs, deadline: Date.now() + secs * 1000, timedOut: false };
@@ -1664,12 +1952,23 @@
         function practiceNext() {
             const P = state.practice;
             if (P.index < P.items.length - 1) { P.index++; render(); window.scrollTo(0, 0); }
-            else finishPractice();
+            else practiceFinishNow();
+        }
+        function practicePrev() {
+            const P = state.practice;
+            if (P.index > 0) { P.index--; render(); window.scrollTo(0, 0); }
+        }
+        function practiceJump(i) { state.practice.index = i; render(); window.scrollTo(0, 0); }
+        function practiceFinishNow() {
+            const P = state.practice;
+            const left = P.items.length - Object.keys(P.answers).length;
+            if (!left || confirm('You have ' + left + ' unanswered question' + (left === 1 ? '' : 's') + '. Finish this practice now?')) finishPractice();
         }
 
         function quitPractice() {
             if (confirm('Leave practice? Your progress in this session will not be saved.')) {
                 if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
+                clearProgress();
                 showDashboard();
             }
         }
@@ -1696,13 +1995,14 @@
             const P = state.practice;
             return P.items.map((q, i) => ({
                 s: q.subject, q: q.question, o: q.options, a: q.answer,
-                c: P.answers[i] === undefined ? -1 : P.answers[i], p: q.passage || null
+                c: P.answers[i] === undefined ? -1 : P.answers[i], p: q.passage || null, n: q.novel ? 1 : 0
             }));
         }
 
         async function finishPractice() {
             if (state.currentView !== 'practice') return;
             if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
+            clearProgress();
             const P = state.practice;
             const right = practiceScore();
             setView('practiceResult');
@@ -1733,7 +2033,8 @@
             const done = chosen !== undefined;
             const isLast = P.index === total - 1;
             const answered = Object.keys(P.answers).length;
-            const pct = Math.round(((P.index + (done ? 1 : 0)) / total) * 100);
+            const pct = Math.round((answered / total) * 100);
+            if (P.style !== 'waec' && !q.marked) { q.marked = true; markSeen(q.seenKey || q.subject, q.key); }
             const opts = q.options.map((opt, idx) => {
                 let cls = 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]';
                 if (done) {
@@ -1744,12 +2045,24 @@
                 return `
                     <button ${done ? 'disabled' : ''} onclick="practiceAnswer(${idx})" class="w-full text-left flex items-center gap-4 p-4 rounded-xl border transition ${cls}">
                         <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs bg-white border border-[#e8e2d2]">${String.fromCharCode(65 + idx)}</span>
-                        <span class="text-sm font-medium">${esc(opt)}</span>
+                        <span class="text-sm font-medium">${fq(opt, q.subject)}</span>
                     </button>`;
             }).join('');
             const feedback = !done ? '' : (chosen === q.answer
                 ? `<div class="mt-4 text-sm font-semibold text-emerald-800 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3">✓ Correct!</div>`
                 : `<div class="mt-4 text-sm font-semibold text-rose-800 bg-rose-500/10 border border-rose-500/30 rounded-xl p-3">✗ Not quite. The correct answer is ${String.fromCharCode(65 + q.answer)}.</div>`);
+            // question number card: grouped by subject, coloured by result
+            const groups = P.subjects.map(sub => {
+                const btns = P.items.map((it, i) => {
+                    if (it.subject !== sub) return '';
+                    let cls = 'bg-[#faf8f2] text-[#58796b] border-[#e8e2d2]';
+                    const c = P.answers[i];
+                    if (c !== undefined) cls = c === it.answer ? 'bg-emerald-500/15 text-emerald-800 border-emerald-500' : 'bg-rose-500/15 text-rose-800 border-rose-500';
+                    if (i === P.index) cls = 'border-2 border-[#0b5a3c] text-[#0b3d2b] bg-[#e1f3e8]';
+                    return `<button onclick="practiceJump(${i})" class="h-9 rounded-lg font-bold text-xs border transition ${cls}">${i + 1}</button>`;
+                }).join('');
+                return `<div class="mt-3"><p class="text-[11px] font-semibold text-[#58796b] uppercase mb-1.5">${esc(subjLabel(sub))}</p><div class="grid grid-cols-8 sm:grid-cols-10 gap-1.5">${btns}</div></div>`;
+            }).join('');
             return `
                 <div class="flex-1 bg-[#faf8f2]">
                     <div class="max-w-3xl mx-auto p-4 sm:p-6">
@@ -1770,12 +2083,23 @@
                                 <span class="font-semibold text-emerald-700">Score: ${practiceScore()} / ${answered}</span>
                             </div>
                             ${q.passage ? `<div class="mb-5 p-4 rounded-xl bg-[#faf8f2] border border-[#e8e2d2] text-sm text-[#2f5546] leading-relaxed max-h-64 overflow-y-auto"><p class="text-xs font-semibold text-[#0b5a3c] uppercase mb-2">Read the passage and answer the question</p>${esc(q.passage)}</div>` : ''}
-                            <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-5 leading-relaxed">${esc(q.question)}</h3>
+                            ${novelTag(q)}
+                            <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-5 leading-relaxed">${fq(q.question, q.subject)}</h3>
                             <div class="space-y-3">${opts}</div>
                             ${feedback}
-                            <div class="flex justify-end mt-6 pt-5 border-t border-[#e8e2d2]">
+                            <div class="flex items-center justify-between mt-6 pt-5 border-t border-[#e8e2d2]">
+                                <button onclick="practicePrev()" ${P.index === 0 ? 'disabled' : ''} class="px-5 py-3 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-sm hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
                                 <button onclick="practiceNext()" class="px-6 py-3 rounded-xl font-semibold text-sm transition ${done ? 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/20' : 'bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#2f5546]'}">${isLast ? 'Finish' : (done ? 'Next →' : 'Skip →')}</button>
                             </div>
+                        </div>
+                        <div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 mt-4 shadow-xl">
+                            <div class="flex items-center justify-between">
+                                <h4 class="font-bold text-[#0b3d2b] text-sm uppercase tracking-wide">Question numbers</h4>
+                                <span class="text-xs text-[#58796b]">${answered} / ${total} answered</span>
+                            </div>
+                            <p class="text-xs text-[#58796b] mt-1">Tap any number to jump to that question. Green = correct, red = wrong.</p>
+                            ${groups}
+                            <button onclick="practiceFinishNow()" class="mt-5 w-full bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold text-sm py-3 rounded-xl transition">Finish practice</button>
                         </div>
                     </div>
                 </div>`;
@@ -2069,18 +2393,20 @@
             if (confirm('Leave this paper? Your answers will not be scored.')) {
                 if (waecInterval) { clearInterval(waecInterval); waecInterval = null; }
                 state.waec = null;
+                clearProgress();
                 showDashboard();
             }
         }
 
         function waecReviewItems() {
             const W = state.waec;
-            return W.items.map((q, i) => ({ s: q.subject, q: q.question, o: q.options, a: q.answer, c: W.answers[i] === undefined ? -1 : W.answers[i], p: q.passage || null }));
+            return W.items.map((q, i) => ({ s: q.subject, q: q.question, o: q.options, a: q.answer, c: W.answers[i] === undefined ? -1 : W.answers[i], p: q.passage || null, n: q.novel ? 1 : 0 }));
         }
 
         async function submitWaec() {
             if (state.currentView !== 'waec') return;
             if (waecInterval) { clearInterval(waecInterval); waecInterval = null; }
+            clearProgress();
             const W = state.waec;
             let right = 0;
             W.items.forEach((q, i) => { if (W.answers[i] === q.answer) right++; });
@@ -2141,12 +2467,12 @@
                                 <button onclick="waecFlag()" class="text-xs font-semibold px-3 py-1 rounded-full border transition ${flagged ? 'bg-amber-500/20 text-amber-700 border-amber-500/40' : 'bg-[#eef1ec] text-[#58796b] border-[#d9d4c3] hover:text-[#0b3d2b]'}">${flagged ? '🚩 Flagged' : '🏳️ Flag for review'}</button>
                             </div>
                             ${q.passage ? `<div class="mb-5 p-4 rounded-xl bg-[#faf8f2] border border-[#e8e2d2] text-sm text-[#2f5546] leading-relaxed max-h-64 overflow-y-auto"><p class="text-xs font-semibold text-[#0b5a3c] uppercase mb-2">Read the passage and answer the question</p>${esc(q.passage)}</div>` : ''}
-                            <h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-6 leading-relaxed">${esc(q.question)}</h3>
+                            ${novelTag(q)}<h3 class="text-lg sm:text-xl font-medium text-[#0b3d2b] mb-6 leading-relaxed">${fq(q.question, q.subject)}</h3>
                             <div class="space-y-3">
                                 ${q.options.map((opt, idx) => `
                                     <label onclick="waecSelect(${idx})" class="flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition ${sel === idx ? 'bg-[#e1f3e8] border-[#0b5a3c] text-[#0b3d2b]' : 'bg-[#faf8f2] border-[#e8e2d2] text-[#2f5546] hover:border-[#0b5a3c]'}">
                                         <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center font-bold text-xs ${sel === idx ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${String.fromCharCode(65 + idx)}</span>
-                                        <span class="text-sm font-medium">${esc(opt)}</span>
+                                        <span class="text-sm font-medium">${fq(opt, q.subject)}</span>
                                     </label>`).join('')}
                             </div>
                             <div class="flex items-center justify-between pt-6 mt-6 border-t border-[#e8e2d2]">
@@ -2476,7 +2802,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
