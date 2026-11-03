@@ -38,10 +38,6 @@
             border-left: 2px solid currentColor; border-right: 2px solid currentColor;
             background: linear-gradient(currentColor, currentColor) left top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) left bottom / .4em 2px no-repeat,
                         linear-gradient(currentColor, currentColor) right top / .4em 2px no-repeat, linear-gradient(currentColor, currentColor) right bottom / .4em 2px no-repeat; }
-        /* mobile view on wide screens: a phone-width column */
-        html.mobileview body { background: #0b2a1e; }
-        html.mobileview #app { width: 100%; max-width: 430px; margin: 0 auto; box-shadow: 0 0 40px rgba(0,0,0,.35); }
-        html.mobileview { font-size: 16px !important; }
         .mfig { display: block; margin: .4rem 0 .9rem; }
         .mfig svg { display: block; }
         img, svg { max-width: 100%; }
@@ -461,29 +457,6 @@
         function installStore(get, val) {
             try { return get ? localStorage.getItem('gt_install_snooze') : localStorage.setItem('gt_install_snooze', String(val)); } catch (_) { return null; }
         }
-        // Installed app = always mobile view. Opened from a link in a browser = normal view, with a button to switch.
-        function viewMode() {
-            if (isStandalone()) return 'mobile';
-            try { return localStorage.getItem('gt_view') === 'mobile' ? 'mobile' : 'desktop'; } catch (_) { return 'desktop'; }
-        }
-        function toggleView() {
-            try { localStorage.setItem('gt_view', viewMode() === 'mobile' ? 'desktop' : 'mobile'); } catch (_) {}
-            render();
-        }
-        function updateViewToggle() {
-            let el = document.getElementById('view-toggle');
-            const show = !isStandalone() && window.innerWidth >= 700 && state.currentView !== 'loading';
-            if (!show) { if (el) el.remove(); return; }
-            if (!el) {
-                el = document.createElement('button');
-                el.id = 'view-toggle';
-                el.className = 'fixed bottom-4 right-4 z-[90] bg-white text-[#0b3d2b] border border-[#d9d4c3] shadow-lg rounded-full px-4 py-2.5 text-xs font-semibold hover:border-[#0b5a3c] transition';
-                el.onclick = toggleView;
-                document.body.appendChild(el);
-            }
-            el.textContent = viewMode() === 'mobile' ? '🖥️ Switch to desktop view' : '📱 Switch to mobile view';
-        }
-        window.addEventListener('resize', updateViewToggle);
         function isStandalone() {
             return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
         }
@@ -551,17 +524,11 @@
                 loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister, pay: renderPay, locked: renderLocked,
                 dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, waecSetup: renderWaecSetup, waecPracticeSetup: renderWaecPracticeSetup, waec: renderWaec, waecResult: renderWaecResult, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
             };
-            let html = (views[state.currentView] || renderLoading)();
-            const mob = viewMode() === 'mobile';
-            // mobile view = the phone layout: drop every sm:/md:/lg:/xl: class so wide screens use the same layout as a phone
-            if (mob) html = html.replace(/(\s)(?:sm|md|lg|xl|2xl):[^\s"'`]+/g, '$1');
-            document.documentElement.classList.toggle('mobileview', mob);
-            app.innerHTML = html;
+            app.innerHTML = (views[state.currentView] || renderLoading)();
             if (state.currentView === 'exam') updateTimerDisplay();
             if (state.currentView === 'practice') updatePracticeTimer();
             if (state.currentView === 'waec') updateWaecTimer();
             saveProgress();
-            updateViewToggle();
             updateInstallPopup();
         }
 
