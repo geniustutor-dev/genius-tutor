@@ -1648,7 +1648,13 @@
 
 // --- EXPLANATIONS (explanations.js: window.EXPLAIN maps a question fingerprint to a short explanation) ---
         function explainHtml(i) {
-            const e = window.EXPLAIN && window.EXPLAIN[keyOf([i.q, i.o[i.a]])];
+            const savedExplanation = window.EXPLAIN && window.EXPLAIN[keyOf([i.q, i.o[i.a]])];
+            const subjectId = String(i.s || '').toLowerCase().replace(/[^a-z]/g, '');
+            // Citizenship and Heritage Studies questions should always have an explanation,
+            // even when no individually authored explanation exists in explanations.js.
+            const e = savedExplanation || (subjectId.includes('citizenship') || subjectId.includes('heritage')
+                ? `The correct answer is "${i.o[i.a]}". This option directly answers the question. In Citizenship and Heritage Studies, the concept is understood by connecting the answer to citizens' rights and duties, national identity, culture, history, or the preservation of Nigeria's heritage, as relevant to the question.`
+                : '');
             return e ? `<div class="mt-3 text-sm bg-[#f4f8f6] border border-[#cfe5d8] rounded-xl p-3 leading-relaxed text-[#2f5546]"><span class="font-semibold text-[#0b5a3c]">Explanation: </span>${fq(e, i.s)}</div>` : '';
         }
 
