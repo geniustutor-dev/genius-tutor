@@ -77,7 +77,7 @@
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
         import {
             getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, Timestamp, getDocs, collection,
-            query, orderBy, limit, where, serverTimestamp, getCountFromServer
+            query, orderBy, limit, where, serverTimestamp, getCountFromServer, onSnapshot
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -166,21 +166,21 @@
             const opts = shuffleArr([correct, w1, w2, w3].filter(x => x !== undefined));
             return { question, options: opts, answer: opts.indexOf(correct), passage: passage || null, topic: topic || '', key: keyOf(row), ...(extra || {}) };
         }
-        function englishExamSize() {
+        function englishExamSize(noNovel) {
             const E = window.ENGLISH;
             if (!E) return 60;
             const pq = Math.min(2, Object.keys(E.passages || {}).length) * 5;
-            const available = pq + Math.min(5, (E.novel || []).length) + (E.general || []).length;
+            const available = pq + (noNovel ? 0 : Math.min(5, (E.novel || []).length)) + (E.general || []).length;
             return Math.min(60, available);
         }
-        function buildEnglishExam() {
+        function buildEnglishExam(noNovel) {   // noNovel = true for WAEC/NECO/GCE: the JAMB novel is JAMB-only
             const E = window.ENGLISH;
             if (!E) return getRandomQuestions('english', 60);
             const out = [];
             shuffleArr(Object.keys(E.passages || {})).slice(0, 2).forEach(k => {
                 E.passages[k].qs.forEach(r => out.push(toItem(r, E.passages[k].text)));
             });
-            const novel = shuffleArr(E.novel || []).slice(0, 5).map(r => toItem(r, null, { novel: true }));
+            const novel = (noNovel ? [] : shuffleArr(E.novel || []).slice(0, 5)).map(r => toItem(r, null, { novel: true }));
             const need = 60 - out.length - novel.length;
             const general = shuffleArr(E.general || []).slice(0, Math.max(0, need)).map(r => toItem(r));
             return [...out, ...general, ...novel];
@@ -441,6 +441,7 @@
             if (registering) return;
             if (state.currentView === 'exam' || state.currentView === 'result') return;
             if (!fbUser || !fbUser.emailVerified) {
+                stopMessaging();
                 state.user = null;
                 state.isAdmin = false;
                 if (state.currentView === 'loading') { state.currentView = 'home'; render(); }
@@ -461,12 +462,14 @@
         });
 
         async function loadProfile(fbUser) {
+            try { await fbUser.getIdToken(true); } catch (_) {}   // fresh token so the email_verified claim is current (leaderboard rules need it)
             const snap = await getDoc(doc(db, 'users', fbUser.uid));
             if (!snap.exists()) throw new Error('Profile not found. Please register again.');
             state.user = { uid: fbUser.uid, ...snap.data() };
             saveNameKey(state.user.name, fbUser.uid);   // covers students who registered before the name check existed
             const adminSnap = await getDoc(doc(db, 'admins', fbUser.uid));
             state.isAdmin = adminSnap.exists();
+            startMessaging();
         }
 
         // --- INSTALL AS APP POPUP (home page only) ---
@@ -690,19 +693,15 @@
                         <div class="flex flex-wrap gap-2.5 mt-4">
                             ${subjects.map(s => `<span class="text-sm bg-[#dcefe2] text-[#0b3d2b] rounded-full px-4 py-1.5">${esc(subjLabel(s))}${hasRealQuestions(s) ? '' : ' <span class="text-[10px] font-semibold text-[#8a6500] bg-[#f6ecc9] rounded-full px-2 py-0.5 ml-1">Coming soon</span>'}</span>`).join('')}
                         </div>
-
-                        <div class="mt-10 bg-[#f6ecc9] border border-[#ecdca4] rounded-2xl p-4 text-sm text-[#5b4a12] leading-relaxed">
-                            🛡️ Genius Tutor CBT is an independent practice platform and is not affiliated with JAMB. Questions are clearly practice questions, not official past questions.
-                        </div>
                     </section>
 
                     <section class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-10">
                         <h2 class="font-display font-bold text-2xl">Common questions</h2>
                         <div class="mt-4 bg-white border border-[#e8e2d2] rounded-2xl overflow-hidden">
                             ${[
-                                ['Is it free?', 'Creating an account is free, and so is practice (JAMB and WAEC/NECO/GCE) for your first month. After that, you need the 1-month plan for ₦500 to keep signing in and using the app. One plan unlocks everything, including the full JAMB exam and WAEC/NECO/GCE papers. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your plan will be activated once the payment is confirmed.'],
+                                ['Is it free?', 'Creating an account is free, and for your first 30 days you get full access: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk group. After that, you need the 1-year plan for ₦2,000 to keep using the app. One plan unlocks everything for a whole year. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your plan will be activated once the payment is confirmed.'],
                                 ['What is WAEC/NECO/GCE mode?', 'You pick one subject and sit a timed paper of 60 questions. Answers are shown only after you submit, together with your score and a WAEC/NECO/GCE-style grade.'],
-                                ['Are these real JAMB questions?', 'No. They are practice questions written for this app, not official JAMB past questions. This platform is independent and not affiliated with JAMB.'],
+                                ['Are these real JAMB questions?', 'They are practice questions written from JAMB past questions.'],
                                 ['Do I have to verify my email?', 'Yes. After you register we send a verification link. Tap it, then sign in. If you cannot see the email, check your spam folder.'],
                                 ['The verification link does not open. What do I do?', 'Try switching between mobile data and Wi-Fi, or turn off any VPN, then tap the link again. If it still fails, message me on WhatsApp below and I will help you.'],
                                 ['Which subjects can I choose?', 'English Language is compulsory. You pick any 3 other subjects for a full exam or a practice session.'],
@@ -739,7 +738,6 @@
 
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
-                        <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
         }
@@ -967,7 +965,7 @@
 
         // --- EXAM SETUP (choose subjects) ---
         function openExamSetup() {
-            if (!hasActivePass()) { alert('Full exams need an active pass.'); return; }
+            if (!hasFullAccess()) { alert('Your free trial has ended. Get the 1-year plan to take full exams.'); return; }
             if (state.esetup.subjects.length !== 3) state.esetup.subjects = defaultPicks();
             state.pickMsg = '';
             setView('examSetup');
@@ -994,10 +992,10 @@
                 </div>`;
         }
 
-        // --- 1-MONTH PLAN (₦500; full exams and practice need it once the free month is over) ---
-        const PLAN_DAYS = 30;
+        // --- 1-YEAR PLAN (₦2,000; everything needs it once the 30-day free trial is over) ---
+        const PLAN_DAYS = 365;   // 1-year pass
         const WA_NUMBER = '2349122866764';
-        const PASS_PRICE = '₦500';
+        const PASS_PRICE = '₦2,000';
         const HELPDESK_LINK = 'https://chat.whatsapp.com/HAv3RWHxSme2OYrog2HNBf?s=cl&p=a&iam=2';
 
         function hasActivePass() {
@@ -1033,8 +1031,8 @@
         function payWaUrl() {
             const u = state.user;
             const msg = u
-                ? 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-month plan. Name: ' + u.name + '. Email: ' + u.email + '. My payment screenshot is attached.'
-                : 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-month plan. My name: ____ . My email: ____ . My payment screenshot is attached.';
+                ? 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year plan. Name: ' + u.name + '. Email: ' + u.email + '. My payment screenshot is attached.'
+                : 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year plan. My name: ____ . My email: ____ . My payment screenshot is attached.';
             return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(msg);
         }
         function copyAcct(btn) {
@@ -1045,8 +1043,8 @@
         function goPay() { setView('pay'); window.scrollTo(0, 0); }
         function payBoxHtml() {
             return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 shadow-sm text-[#0b3d2b]">
-                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">ACTIVATE YOUR 1-MONTH PLAN</p>
-                <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} for 1 month, unlocks everything</h2>
+                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">ACTIVATE YOUR 1-YEAR PLAN</p>
+                <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} for 1 year, unlocks everything</h2>
                 <div class="mt-3 bg-[#e7f3ec] border border-[#cfe5d8] rounded-xl p-4">
                     <p class="text-[11px] text-[#0b3d2b]/60">Bank</p>
                     <p class="font-semibold text-sm">${esc(PAY_BANK)}</p>
@@ -1091,16 +1089,21 @@
         function examAccessHtml() {
             const P = state.pass;
             const u = state.user;
-            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-month plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
             if (hasActivePass()) {
                 const label = P && P.active ? 'Pass active until ' + fmtDate(P.expiresMs) : 'Admin access';
                 return `<p class="mt-4 text-xs font-semibold text-[#f4b731]">✓ ${esc(label)}</p>
                     <button onclick="openExamSetup()" class="mt-3 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>`;
             }
+            if (hasFullAccess()) {
+                const tEnd = trialEndMs();
+                return `<p class="mt-4 text-xs font-semibold text-[#f4b731]">✓ Free trial: full access${tEnd ? ' until ' + esc(fmtDate(tEnd)) : ''}</p>
+                    <button onclick="openExamSetup()" class="mt-3 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>`;
+            }
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Full exams and WAEC/NECO/GCE papers need a 1-month plan (${PASS_PRICE}). One pass unlocks everything.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to unlock the full JAMB exam, WAEC/NECO/GCE papers, practice and the WhatsApp group.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
                     <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
@@ -1111,7 +1114,7 @@
             const u = state.user;
             let body;
             if (lb === null) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">Loading leaderboard…</p>`;
-            else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the latest Firestore rules (leaderboard and leaderboard_public).' : 'The leaderboard is not available right now. Please try again later.'}</p>`;
+            else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the latest Firestore rules (leaderboard and leaderboard_public).' : 'The leaderboard is not available right now (' + esc(lb.error) + '). Please try again later.'}</p>`;
             else if (!lb.rows.length) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${lb.mode === 'names' ? 'No one yet.' : 'No scores yet.'} Finish a full exam to be the first on the board.</p>`;
             else if (lb.mode === 'names') {
                 body = lb.rows.map((r, i) => {
@@ -1248,7 +1251,7 @@
                             </div>
                             <nav class="flex items-center gap-1 text-xs font-medium">
                                 <span class="px-3 py-1.5 rounded-lg bg-[#dcefe2] text-[#0b3d2b]">Dashboard</span>
-                                ${state.isAdmin ? `<button onclick="openAdmin()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Admin</button>` : ''}
+                                ${state.isAdmin ? `<button onclick="openAdmin()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Admin${adminBadgeHtml()}</button>` : ''}
                                 <button onclick="handleLogout()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Sign out</button>
                             </nav>
                         </div>
@@ -1294,7 +1297,7 @@
                             </div>
                         </div>
 
-                        ${hasActivePass() ? `<a href="${HELPDESK_LINK}" target="_blank" rel="noopener" class="mt-4 flex items-center gap-4 ${card} p-4 hover:border-[#25a244] transition">
+                        ${hasFullAccess() ? `<a href="${HELPDESK_LINK}" target="_blank" rel="noopener" class="mt-4 flex items-center gap-4 ${card} p-4 hover:border-[#25a244] transition">
                             <span class="w-11 h-11 shrink-0 rounded-xl bg-[#e3f6e8] text-[#25a244] flex items-center justify-center text-xl">💬</span>
                             <span class="flex-1 min-w-0">
                                 <span class="block font-display font-bold text-base">Join GENIUS TUTOR CBT HELP DESK</span>
@@ -1313,14 +1316,13 @@
 
                     <footer class="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
-                        <span>Not affiliated with JAMB.</span>
                     </footer>
                 </div>`;
         }
 
         async function handleLogout() {
             await signOut(auth);
-            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            stopMessaging(); state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('home');
         }
 
@@ -1328,7 +1330,7 @@
             const u = state.user;
             const picks = state.esetup.subjects;
             if (picks.length !== 3) return;
-            if (!hasActivePass()) { alert('Full exams need an active pass.'); showDashboard(); return; }
+            if (!hasFullAccess()) { alert('Your free trial has ended. Get the 1-year plan to take full exams.'); showDashboard(); return; }
             state.examSubjects = ['english', ...picks];
             state.examData = { english: buildEnglishExam() };
             picks.forEach(sub => { state.examData[sub] = getRandomQuestions(sub, 40); });
@@ -1362,7 +1364,7 @@
                 if (err && err.code === 'permission-denied') {
                     state.pass = { expiresMs: 0, active: false, error: false };
                     if (state.timerInterval) clearInterval(state.timerInterval);
-                    alert('Your pass is not active, so the exam cannot start.');
+                    alert('Your free trial or pass is not active, so the exam cannot start.');
                     showDashboard();
                     return;
                 }
@@ -1689,7 +1691,7 @@
                     <main class="flex-1 px-4 pt-6 pb-10">
                         <div class="max-w-sm sm:max-w-md mx-auto">
                             <div class="bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed mb-4">
-                                ⏰ <strong>Your 1-month free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-month plan (${PASS_PRICE}). It unlocks everything.
+                                ⏰ <strong>Your 1-month free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-year plan (${PASS_PRICE}). It unlocks everything.
                             </div>
                             ${payBoxHtml()}
                             <div class="flex flex-wrap gap-2 mt-4">
@@ -1785,7 +1787,7 @@
         }
 
         function startReview() {
-            state.review = { items: buildReviewItems(), tab: 'all', back: 'result' };
+            state.review = { items: buildReviewItems(), tab: 'all', back: 'result', sid: state.sessionId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -1794,13 +1796,13 @@
             try {
                 const snap = await getDoc(doc(db, 'reviews', id));
                 if (!snap.exists()) { alert('The answer review for this attempt is not available.'); return; }
-                state.review = { items: snap.data().items, tab: 'all', back: 'dashboard' };
+                state.review = { items: snap.data().items, tab: 'all', back: 'dashboard', sid: id };
                 setView('review');
                 window.scrollTo(0, 0);
             } catch (err) { alert(friendlyError(err)); }
         }
 
-        function closeReview() { const b = state.review && state.review.back; if (b === 'result') setView('result'); else if (b === 'practiceResult') setView('practiceResult'); else if (b === 'waecResult') setView('waecResult'); else showDashboard(); }
+        function closeReview() { closeQChat(true); const b = state.review && state.review.back; if (b === 'result') setView('result'); else if (b === 'practiceResult') setView('practiceResult'); else if (b === 'waecResult') setView('waecResult'); else showDashboard(); }
         function setReviewTab(t) { state.review.tab = t; render(); window.scrollTo(0, 0); }
 
         function renderReview() {
@@ -1838,6 +1840,7 @@
                         ${i.n ? novelTag({ novel: true }) : ''}<h3 class="text-base font-medium text-[#0b3d2b] mb-4 leading-relaxed">${fq(i.q, i.s)}</h3>
                         <div class="space-y-2">${opts}</div>
                         ${explainHtml(i)}
+                        ${qChatHtml(i, R.items.indexOf(i))}
                     </div>`;
             }).join('');
             const tabBtn = (key, label) => `<button onclick="setReviewTab('${key}')" class="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider whitespace-nowrap transition ${R.tab === key ? 'bg-indigo-600 text-white' : 'bg-white text-[#58796b] border border-[#e8e2d2]'}">${label}</button>`;
@@ -1861,10 +1864,10 @@
         }
 
 // --- PRACTICE MODE ---
-        function availableFor(sub) {
+        function availableFor(sub, noNovel) {
             if (sub === 'english' && window.ENGLISH) {
                 const E = window.ENGLISH;
-                return (E.general || []).length + (E.novel || []).length + Object.keys(E.passages || {}).length * 5;
+                return (E.general || []).length + (noNovel ? 0 : (E.novel || []).length) + Object.keys(E.passages || {}).length * 5;
             }
             if (REAL_BANKS[sub] && REAL_BANKS[sub].length) return REAL_BANKS[sub].length;
             return 125;
@@ -1922,7 +1925,7 @@
             return items;
         }
 
-        function buildPracticeEnglish(n) {
+        function buildPracticeEnglish(n, noNovel) {
             const E = window.ENGLISH;
             if (!E) return getRandomQuestions('english', n);
             const out = [];
@@ -1931,7 +1934,7 @@
                 const k = shuffleArr(keys)[0];
                 E.passages[k].qs.forEach(r => out.push(toItem(r, E.passages[k].text)));
             }
-            const pool = [...(E.general || []), ...(E.novel || [])];
+            const pool = noNovel ? [...(E.general || [])] : [...(E.general || []), ...(E.novel || [])];
             const gen = shuffleArr(pool).slice(0, Math.max(0, n - out.length)).map(r => toItem(r, null, (E.novel || []).includes(r) ? { novel: true } : null));
             return [...out, ...gen];
         }
@@ -1967,7 +1970,7 @@
         }
 
         function openPractice() {
-            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); return; }
             if (state.psetup.subjects.length !== 3) state.psetup.subjects = defaultPicks();
             state.pickMsg = '';
             setView('practiceSetup');
@@ -2019,7 +2022,7 @@
         }
 
         function startPractice() {
-            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); showDashboard(); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); showDashboard(); return; }
             const ps = state.psetup;
             if (ps.subjects.length !== 3) return;
             const subs = ['english', ...ps.subjects];
@@ -2104,6 +2107,7 @@
             window.scrollTo(0, 0);
             try {
                 const ref = doc(collection(db, 'sessions'));
+                P.reviewId = ref.id;
                 let hasReview = false;
                 try {
                     await setDoc(doc(db, 'reviews', ref.id), { uid: state.user.uid, items: buildPracticeReviewItems() });
@@ -2189,7 +2193,7 @@
         }
 
         function startPracticeReview() {
-            state.review = { items: buildPracticeReviewItems(), tab: 'all', back: 'practiceResult' };
+            state.review = { items: buildPracticeReviewItems(), tab: 'all', back: 'practiceResult', sid: state.practice && state.practice.reviewId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -2225,7 +2229,7 @@
         }
 
         // --- ADMIN (access controlled by the admins/{uid} document + Firestore rules) ---
-        // --- FREE TRIAL: practice is free for 1 month after registration, then needs the 1-month plan ---
+        // --- FREE TRIAL: practice is free for 1 month after registration, then needs the 1-year plan ---
         const TRIAL_DAYS = 30;   // 1 month free trial
         const WAEC_PRACTICE_SECS_PER_Q = 60;   // WAEC/NECO/GCE pace: 60 questions in 60 minutes
 
@@ -2241,17 +2245,20 @@
             return end === 0 || Date.now() < end;
         }
 
+        // During the free trial a student has FULL access: JAMB exam, WAEC/NECO/GCE exam, both practice modes and the WhatsApp group.
+        function hasFullAccess() { return hasPracticeAccess(); }
+
         function passWaUrl() {
             const u = state.user;
-            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-month plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
         }
 
         function practiceGateHtml(fn, label) {
             if (hasPracticeAccess()) return `<button onclick="${fn}" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">${label}</button>`;
             if (state.pass === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-month plan (${PASS_PRICE}) to keep practising.</div>
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to keep practising.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
+                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
                     <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
@@ -2266,15 +2273,15 @@
             const amber = 'mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed';
             if (hasActivePass()) {   // a paid month that is about to finish
                 const end = state.pass.expiresMs, d = daysLeft(end);
-                if (d > 0 && d <= REMIND_DAYS) return `<div class="${amber}">⏰ <strong>Reminder: your 1-month plan ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Renew for ${PASS_PRICE} so you do not lose access to your exams and practice.<br>${btn('Renew 1-month plan (' + PASS_PRICE + ')')}</div>`;
+                if (d > 0 && d <= REMIND_DAYS) return `<div class="${amber}">⏰ <strong>Reminder: your 1-year plan ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Renew for ${PASS_PRICE} so you do not lose access to your exams and practice.<br>${btn('Renew 1-year plan (' + PASS_PRICE + ')')}</div>`;
                 return '';
             }
             const end = trialEndMs();
             if (!end) return '';
             const d = daysLeft(end);
-            if (d > REMIND_DAYS) return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>1 month free trial: ${plural(d)} left</strong> (until ${esc(fmtDate(end))}). After that you need the 1-month plan (${PASS_PRICE}), which also unlocks the JAMB exam and WAEC/NECO/GCE papers.</div>`;
-            if (d > 0) return `<div class="${amber}">⏰ <strong>Reminder: your free trial ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Activate the 1-month plan (${PASS_PRICE}) now so you can keep practising and take the JAMB exam and WAEC/NECO/GCE papers without a break.<br>${btn('Activate 1-month plan (' + PASS_PRICE + ')')}</div>`;
-            return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-month plan (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-month plan (' + PASS_PRICE + ')')}</div>`;
+            if (d > REMIND_DAYS) return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>1 month free trial: ${plural(d)} left</strong> (until ${esc(fmtDate(end))}). You have full access during the trial: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk. After that you need the 1-year plan (${PASS_PRICE}).</div>`;
+            if (d > 0) return `<div class="${amber}">⏰ <strong>Reminder: your free trial ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Activate the 1-year plan (${PASS_PRICE}) now so you can keep practising and take the JAMB exam and WAEC/NECO/GCE papers without a break.<br>${btn('Activate 1-year plan (' + PASS_PRICE + ')')}</div>`;
+            return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-year plan (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-year plan (' + PASS_PRICE + ')')}</div>`;
         }
 
         // A pop-up reminder, shown once a day when 5 days or fewer are left (free trial or paid month)
@@ -2293,9 +2300,9 @@
             box.className = 'fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4';
             box.innerHTML = `<div class="bg-white text-[#0b3d2b] rounded-2xl shadow-2xl max-w-sm w-full p-6">
                 <p class="text-3xl mb-2">⏰</p>
-                <h3 class="font-display font-bold text-lg">${kind === 'trial' ? 'Your free trial ends in ' + plural(d) : 'Your 1-month plan ends in ' + plural(d)}</h3>
+                <h3 class="font-display font-bold text-lg">${kind === 'trial' ? 'Your free trial ends in ' + plural(d) : 'Your 1-year plan ends in ' + plural(d)}</h3>
                 <p class="text-sm leading-relaxed mt-2 text-[#2f5546]">${kind === 'trial'
-                    ? 'Activate the 1-month plan for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you can keep practising and take the full JAMB exam and WAEC/NECO/GCE papers.'
+                    ? 'Activate the 1-year plan for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you can keep practising and take the full JAMB exam and WAEC/NECO/GCE papers.'
                     : 'Renew for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you do not lose access.'}</p>
                 <div class="flex gap-2 mt-5">
                     <button onclick="closePlanReminder(); goPay()" class="flex-1 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-3 transition">${kind === 'trial' ? 'Activate now' : 'Renew now'}</button>
@@ -2307,7 +2314,7 @@
 
         // --- WAEC/NECO/GCE PRACTICE: one subject, instant feedback, timed at WAEC/NECO/GCE pace ---
         function openWaecPractice() {
-            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); return; }
             setView('waecPracticeSetup');
             window.scrollTo(0, 0);
         }
@@ -2318,7 +2325,7 @@
         function renderWaecPracticeSetup() {
             const ws = state.wpsetup;
             const subs = ['english', ...OTHER_SUBJECTS];
-            const avail = availableFor(ws.subject);
+            const avail = availableFor(ws.subject, true);
             const n = Math.min(WAEC_PRACTICE_QS, avail);
             const btn = sub => {
                 const on = ws.subject === sub;
@@ -2352,11 +2359,11 @@
         }
 
         function startWaecPractice() {
-            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); showDashboard(); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); showDashboard(); return; }
             const ws = state.wpsetup;
             const sub = ws.subject;
-            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS) : getRandomQuestions(sub, WAEC_PRACTICE_QS);
-            const items = raw.map(q => ({ ...q, subject: sub }));
+            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS, true) : getRandomQuestions(sub, WAEC_PRACTICE_QS);
+            const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = items.length * WAEC_PRACTICE_SECS_PER_Q;
             state.practice = { style: 'waec', subjects: [sub], items, index: 0, answers: {}, secs, timeLeft: secs, deadline: Date.now() + secs * 1000, timedOut: false };
@@ -2371,7 +2378,7 @@
         const WAEC_NEEDS_PASS = true;   // set to false to make WAEC/NECO/GCE mode free (the Firestore rules must then allow mode 'waec')
         let waecInterval = null;
 
-        function hasWaecAccess() { return !WAEC_NEEDS_PASS || hasActivePass(); }
+        function hasWaecAccess() { return !WAEC_NEEDS_PASS || hasFullAccess(); }
 
         function waecGrade(pct) {
             if (pct >= 75) return { code: 'A1', label: 'Excellent' };
@@ -2389,15 +2396,15 @@
             const P = state.pass;
             if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-4 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-month plan (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to unlock WAEC/NECO/GCE mode. The same pass also unlocks the full JAMB exam.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
                     <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
 
         function openWaecSetup() {
-            if (!hasWaecAccess()) { alert('WAEC/NECO/GCE mode needs an active pass.'); return; }
+            if (!hasWaecAccess()) { alert('Your free trial has ended. Get the 1-year plan to use WAEC/NECO/GCE mode.'); return; }
             setView('waecSetup');
             window.scrollTo(0, 0);
         }
@@ -2406,7 +2413,7 @@
         function renderWaecSetup() {
             const sel = state.wsetup.subject;
             const subs = ['english', ...OTHER_SUBJECTS];
-            const n = sel === 'english' ? englishExamSize() : Math.min(WAEC_QS, availableFor(sel));
+            const n = sel === 'english' ? englishExamSize(true) : Math.min(WAEC_QS, availableFor(sel, true));
             const mins = Math.max(1, Math.round(n * (WAEC_MINUTES / WAEC_QS)));
             const btn = sub => {
                 const on = sel === sub;
@@ -2438,10 +2445,10 @@
         }
 
         async function startWaec() {
-            if (!hasWaecAccess()) { alert('WAEC/NECO/GCE mode needs an active pass.'); showDashboard(); return; }
+            if (!hasWaecAccess()) { alert('Your free trial has ended. Get the 1-year plan to use WAEC/NECO/GCE mode.'); showDashboard(); return; }
             const sub = state.wsetup.subject;
-            const raw = sub === 'english' ? buildEnglishExam() : getRandomQuestions(sub, WAEC_QS);
-            const items = raw.map(q => ({ ...q, subject: sub }));
+            const raw = sub === 'english' ? buildEnglishExam(true) : getRandomQuestions(sub, WAEC_QS);
+            const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = Math.round(items.length * (WAEC_MINUTES * 60 / WAEC_QS));
             const W = state.waec = { subject: sub, items, index: 0, answers: {}, flagged: {}, secs, timeLeft: secs, offset: 0, deadline: Date.now() + secs * 1000, sessionId: null, timedOut: false, saveError: false };
@@ -2461,7 +2468,7 @@
                 console.error('Could not log WAEC/NECO/GCE session start', err);
                 if (err && err.code === 'permission-denied') {
                     state.pass = { expiresMs: 0, active: false, error: false };
-                    alert('Your pass is not active, so the paper cannot start.');
+                    alert('Your free trial or pass is not active, so the paper cannot start.');
                     state.waec = null;
                     showDashboard();
                     return;
@@ -2550,7 +2557,7 @@
         }
 
         function startWaecReview() {
-            state.review = { items: waecReviewItems(), tab: 'all', back: 'waecResult' };
+            state.review = { items: waecReviewItems(), tab: 'all', back: 'waecResult', sid: state.waec && state.waec.sessionId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -2682,7 +2689,7 @@
                         ${u.regNumber ? `<p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>` : ''}
                         <p class="text-xs font-semibold mt-2 ${active ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${active ? '✓ Pass until ' + esc(fmtDate(ms)) : (ms ? 'Pass expired ' + esc(fmtDate(ms)) : 'No pass')}</p>
                         <div class="flex flex-wrap gap-1.5 mt-2">
-                            <button onclick="grantPass('${esc(u.uid)}', ${PLAN_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 month</button>
+                            <button onclick="grantPass('${esc(u.uid)}', ${PLAN_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 year</button>
                             ${ms ? `<button onclick="removePass('${esc(u.uid)}')" class="text-[11px] font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50 rounded-lg px-2.5 py-1.5">Remove</button>` : ''}
                         </div>
                     </div>`;
@@ -2701,7 +2708,7 @@
             if (!u) return;
             const base = Math.max(Date.now(), state.adminData.passes[uid] || 0);
             const exp = base + days * 86400000;
-            if (!confirm('Give ' + u.name + ' ' + (days === PLAN_DAYS ? '1 month' : days + ' more days') + '? The pass will run until ' + fmtDate(exp) + '.')) return;
+            if (!confirm('Give ' + u.name + ' ' + (days === PLAN_DAYS ? '1 year' : days + ' more days') + '? The pass will run until ' + fmtDate(exp) + '.')) return;
             try {
                 await setDoc(doc(db, 'passes', uid), {
                     uid, name: u.name || '', regNumber: u.regNumber || '', days,
@@ -2747,9 +2754,11 @@
                         <span class="text-[10px] font-semibold tracking-wider text-[#8a6500] bg-[#f6ecc9] rounded-full px-3 py-1">ADMIN PORTAL</span>
                         <h1 class="font-display font-extrabold text-2xl sm:text-3xl mt-3">Candidate activity & accounts</h1>
 
+                        ${adminInboxCard()}
+
                         <div class="${card} p-5 mt-6">
                             <h2 class="font-display font-bold text-lg">Students and passes (${users.length})</h2>
-                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Full exams need an active pass. After a student pays you, tap +1 month on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
+                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Everything needs an active pass once the 30-day trial is over. After a student pays you, tap +1 year on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
                             <input type="search" value="${esc(state.adminFilter)}" oninput="setAdminFilter(this.value)" placeholder="Search by name, email or reg number" class="${inputCls} mb-4">
                             <div id="admin-students">${adminStudentsHtml()}</div>
                         </div>
@@ -2898,7 +2907,7 @@
         async function forceLogout(msg) {
             try { await signOut(auth); } catch (_) {}
             if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
-            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            stopMessaging(); state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('login', msg);
         }
         function checkAway() {
@@ -2914,8 +2923,379 @@
         window.addEventListener('focus', checkAway);
         setInterval(() => { if (document.visibilityState === 'visible') touchActive(); }, 15000);
 
+        // --- QUESTION CHAT: students message the admin about a question in Answer review ---
+        // threads/{uid_sessionId_questionIndex}  (+ messages subcollection). Admin gets a live badge, toast, beep and
+        // (if allowed) a browser notification while the app is open. WhatsApp is the fallback.
+        let msgUnsubs = [];
+        let adminFirstSnap = true;
+        state.inbox = { threads: [], open: null, msgs: [], unsub: null };
+        state.myThreads = {};
+        state.chat = null;
+
+        // PHONE PUSH for the admin: the server (api/notify.js) sends a notification through ntfy, even when the app is closed.
+        // The secret ntfy topic lives only in the Vercel environment variable NTFY_TOPIC, never in this page.
+        async function pushAdminAlert(tid) {
+            if (state.isAdmin || !auth.currentUser) return;
+            try {
+                const token = await auth.currentUser.getIdToken();
+                fetch('/api/notify', {
+                    method: 'POST', keepalive: true,
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                    body: JSON.stringify({ tid })
+                }).catch(() => {});
+            } catch (_) {}
+        }
+
+        function showToast(text, onClick) {
+            let box = document.getElementById('gt-toast-box');
+            if (!box) {
+                box = document.createElement('div');
+                box.id = 'gt-toast-box';
+                box.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-[100] w-[92%] max-w-sm space-y-2';
+                document.body.appendChild(box);
+            }
+            const el = document.createElement('div');
+            el.className = 'bg-[#0b3d2b] text-white text-sm rounded-xl px-4 py-3 shadow-lg cursor-pointer leading-snug';
+            el.textContent = text;
+            el.onclick = () => { el.remove(); if (onClick) onClick(); };
+            box.appendChild(el);
+            setTimeout(() => el.remove(), 9000);
+        }
+
+        function beep() {
+            try {
+                const C = window.AudioContext || window.webkitAudioContext;
+                const ctx = new C(), o = ctx.createOscillator(), g = ctx.createGain();
+                o.connect(g); g.connect(ctx.destination);
+                o.frequency.value = 880; g.gain.value = 0.08;
+                o.start(); o.stop(ctx.currentTime + 0.18);
+                setTimeout(() => { try { ctx.close(); } catch (_) {} }, 400);
+            } catch (_) {}
+        }
+
+        function fmtChatTime(ts) {
+            return ts && ts.toDate ? ts.toDate().toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'sending…';
+        }
+
+        // me = 'student' or 'admin' (whose side is shown on the right in green)
+        function chatMsgsHtml(msgs, me, studentName) {
+            if (!msgs.length) return '<p class="text-xs text-[#0b3d2b]/55 text-center py-3">No messages yet.</p>';
+            return msgs.map(m => {
+                const mine = m.role === me;
+                const who = m.role === 'admin' ? 'Admin' : (me === 'student' ? 'You' : (studentName || 'Student'));
+                return `<div class="flex ${mine ? 'justify-end' : 'justify-start'} mb-2">
+                    <div class="max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${mine ? 'bg-[#066c43] text-white' : 'bg-[#eef1ec] text-[#0b3d2b]'}">
+                        <p class="text-[10px] font-semibold opacity-70 mb-0.5">${esc(who)}</p>
+                        <p class="whitespace-pre-wrap break-words">${esc(m.text)}</p>
+                        <p class="text-[10px] opacity-60 mt-1">${fmtChatTime(m.createdAt)}</p>
+                    </div></div>`;
+            }).join('');
+        }
+
+        function threadIdFor(idx) {
+            const R = state.review;
+            return state.user.uid + '_' + String((R && R.sid) || 'nosession').replace(/[^A-Za-z0-9]/g, '') + '_' + idx;
+        }
+
+        function qWhatsApp(it) {
+            const msg = 'Hello, I need help with a ' + (it.s || '') + ' question on Genius Tutor. Name: ' + (state.user ? state.user.name : '') +
+                '. Question: ' + String(it.q || '').slice(0, 200);
+            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(msg);
+        }
+
+        // shown under every question in Answer review
+        function qChatHtml(i, idx) {
+            if (!state.user || idx < 0) return '';
+            const tid = threadIdFor(idx);
+            const C = state.chat;
+            const t = state.myThreads[tid];
+            if (!(C && C.tid === tid)) {
+                const dot = t && t.unreadStudent ? '<span class="ml-2 text-[10px] bg-rose-600 text-white rounded-full px-2 py-0.5">New reply</span>' : '';
+                return `<button onclick="openQChat(${idx})" class="mt-3 w-full flex items-center justify-center gap-2 text-sm font-semibold text-[#0b5a3c] bg-[#f4f8f6] hover:bg-[#e1f3e8] border border-[#cfe5d8] rounded-xl py-2.5 transition">💬 Need more explanation? Ask the admin${dot}</button>`;
+            }
+            return `<div class="mt-3 border border-[#cfe5d8] rounded-xl bg-white p-3">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="text-sm font-bold text-[#0b3d2b]">💬 Ask the admin about this question</p>
+                    <button onclick="closeQChat()" class="text-xs font-semibold text-[#58796b] hover:underline">Close</button>
+                </div>
+                <div id="chat-msgs" class="max-h-64 overflow-y-auto mb-2">${chatMsgsHtml(C.msgs, 'student', '')}</div>
+                ${C.error ? `<p class="text-xs text-rose-700 mb-2">${esc(C.error)}</p>` : ''}
+                <textarea id="chat-input" rows="2" maxlength="1000" oninput="setChatDraft(this.value)" placeholder="Type what you want explained…" class="w-full bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]">${esc(C.draft)}</textarea>
+                <div class="flex items-center gap-2 mt-2">
+                    <button id="chat-send" onclick="sendQChat()" class="flex-1 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl py-2.5 transition">Send</button>
+                    <a href="${qWhatsApp(i)}" target="_blank" rel="noopener" class="shrink-0 bg-[#25a244] hover:bg-[#1f8a3a] text-white font-semibold text-sm rounded-xl px-4 py-2.5 transition">WhatsApp</a>
+                </div>
+                <p class="text-[11px] text-[#0b3d2b]/55 mt-2 leading-relaxed">The admin is notified when you send. If the reply is slow, tap WhatsApp to reach him directly.</p>
+            </div>`;
+        }
+
+        function setChatDraft(v) { if (state.chat) state.chat.draft = v; }
+
+        function paintChat() {
+            const el = document.getElementById('chat-msgs');
+            if (!el || !state.chat) return;
+            el.innerHTML = chatMsgsHtml(state.chat.msgs, 'student', '');
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function closeQChat(silent) {
+            if (state.chat && state.chat.unsub) { try { state.chat.unsub(); } catch (_) {} }
+            state.chat = null;
+            if (!silent) render();
+        }
+
+        async function openQChat(idx) {
+            if (!state.user || !state.review) return;
+            closeQChat(true);
+            const tid = threadIdFor(idx);
+            state.chat = { idx, tid, msgs: [], draft: '', error: '', sending: false, unsub: null };
+            render();
+            try {
+                state.chat.unsub = onSnapshot(
+                    query(collection(db, 'threads', tid, 'messages'), orderBy('createdAt', 'asc')),
+                    snap => {
+                        if (!state.chat || state.chat.tid !== tid) return;
+                        state.chat.msgs = snap.docs.map(d => d.data());
+                        paintChat();
+                    },
+                    err => {
+                        console.error('chat listen', err);
+                        if (state.chat && state.chat.tid === tid) { state.chat.error = 'Messages could not load (' + (err.code || 'error') + ').'; render(); }
+                    }
+                );
+                const ts = await getDoc(doc(db, 'threads', tid));
+                if (ts.exists() && ts.data().unreadStudent) await updateDoc(doc(db, 'threads', tid), { unreadStudent: false });
+            } catch (e) { console.error(e); }
+        }
+
+        async function sendQChat() {
+            const C = state.chat;
+            if (!C || C.sending) return;
+            const inp = document.getElementById('chat-input');
+            const text = ((inp ? inp.value : C.draft) || '').trim().slice(0, 1000);
+            if (!text) return;
+            const it = state.review && state.review.items[C.idx];
+            if (!it) return;
+            C.sending = true; C.error = '';
+            const btn = document.getElementById('chat-send');
+            if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+            try {
+                const uid = state.user.uid, ref = doc(db, 'threads', C.tid);
+                const snap = await getDoc(ref);
+                const last = text.slice(0, 200);
+                if (!snap.exists()) {
+                    const L = k => (k >= 0 ? String.fromCharCode(65 + k) : '-');
+                    await setDoc(ref, {
+                        uid, studentName: String(state.user.name || 'Student').slice(0, 100),
+                        subject: String(it.s || '').slice(0, 80), qText: String(it.q || '').slice(0, 600),
+                        optionsText: it.o.map((o, k) => L(k) + '. ' + o).join(' | ').slice(0, 800),
+                        correct: L(it.a), chosen: L(it.c),
+                        sessionId: String((state.review.sid) || '').slice(0, 60), qIndex: C.idx,
+                        lastMessage: last, lastRole: 'student', lastAt: serverTimestamp(), createdAt: serverTimestamp(),
+                        unreadAdmin: true, unreadStudent: false
+                    });
+                } else {
+                    await updateDoc(ref, { lastMessage: last, lastRole: 'student', lastAt: serverTimestamp(), unreadAdmin: true, unreadStudent: false });
+                }
+                await addDoc(collection(db, 'threads', C.tid, 'messages'), { uid, role: 'student', text, createdAt: serverTimestamp() });
+                pushAdminAlert(C.tid);
+                C.draft = '';
+                if (inp) inp.value = '';
+            } catch (e) {
+                console.error('send chat', e);
+                C.error = 'Message not sent (' + (e.code || 'error') + '). Try again, or use WhatsApp.';
+                render();
+            } finally {
+                C.sending = false;
+                const b = document.getElementById('chat-send');
+                if (b) { b.disabled = false; b.textContent = 'Send'; }
+            }
+        }
+
+        // ---------- admin side ----------
+        function adminUnreadCount() { return state.isAdmin ? state.inbox.threads.filter(t => t.unreadAdmin).length : 0; }
+
+        function adminBadgeHtml() {
+            const n = adminUnreadCount();
+            return `<span class="admin-msg-badge ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-600 text-white text-[10px] font-bold ${n ? '' : 'hidden'}">${n}</span>`;
+        }
+
+        function updateAdminBadges() {
+            const n = adminUnreadCount();
+            document.querySelectorAll('.admin-msg-badge').forEach(el => { el.textContent = n; el.classList.toggle('hidden', !n); });
+            const l = document.getElementById('admin-inbox-list');
+            if (l) l.innerHTML = adminInboxListHtml();
+        }
+
+        function adminInboxListHtml() {
+            const T = state.inbox.threads;
+            if (!T.length) return '<p class="text-sm text-[#0b3d2b]/60">No student questions yet.</p>';
+            return T.slice(0, 40).map(t => `
+                <button onclick="openAdminThread('${esc(t.id)}')" class="w-full text-left p-3 rounded-xl border ${t.unreadAdmin ? 'border-rose-300 bg-rose-50' : 'border-[#e8e2d2] bg-[#faf8f2]'} ${state.inbox.open === t.id ? 'ring-2 ring-[#0b5a3c]' : ''} hover:border-[#0b5a3c] transition">
+                    <div class="flex items-center justify-between gap-2">
+                        <p class="font-semibold text-sm truncate">${t.unreadAdmin ? '● ' : ''}${esc(t.studentName || 'Student')} · <span class="text-[#0b5a3c]">${esc(t.subject || '')}</span></p>
+                        <span class="text-[10px] text-[#0b3d2b]/50 shrink-0">${fmtChatTime(t.lastAt)}</span>
+                    </div>
+                    <p class="text-xs text-[#0b3d2b]/70 mt-0.5 truncate">${t.lastRole === 'admin' ? 'You: ' : ''}${esc(t.lastMessage || '')}</p>
+                </button>`).join('');
+        }
+
+        function adminChatHtml() {
+            const I = state.inbox;
+            const t = I.threads.find(x => x.id === I.open);
+            if (!I.open || !t) return '';
+            return `<div class="mt-4 border border-[#cfe5d8] rounded-xl p-4 bg-[#f4f8f6]">
+                <div class="flex items-center justify-between mb-2">
+                    <p class="font-bold text-sm">${esc(t.studentName || 'Student')} · ${esc(t.subject || '')}</p>
+                    <button onclick="closeAdminThread()" class="text-xs font-semibold text-[#58796b] hover:underline">Close</button>
+                </div>
+                <div class="text-xs bg-white border border-[#e8e2d2] rounded-lg p-3 mb-3 leading-relaxed">
+                    <p class="font-semibold mb-1">Question</p>
+                    <p class="whitespace-pre-wrap">${esc(t.qText || '')}</p>
+                    <p class="mt-2 text-[#0b3d2b]/70 whitespace-pre-wrap">${esc(t.optionsText || '')}</p>
+                    <p class="mt-2"><span class="text-emerald-700 font-semibold">Correct: ${esc(t.correct || '-')}</span> · <span class="text-[#0b3d2b]/70">Student chose: ${esc(t.chosen || '-')}</span></p>
+                </div>
+                <div id="admin-chat-msgs" class="max-h-72 overflow-y-auto mb-2">${chatMsgsHtml(I.msgs, 'admin', t.studentName)}</div>
+                <textarea id="admin-chat-input" rows="3" maxlength="1000" placeholder="Type your explanation…" class="w-full bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#0b5a3c]"></textarea>
+                <button id="admin-chat-send" onclick="sendAdminReply()" class="mt-2 w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl py-2.5 transition">Send reply</button>
+            </div>`;
+        }
+
+        function adminInboxCard() {
+            const canAsk = 'Notification' in window && Notification.permission === 'default';
+            return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 mt-6">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <h2 class="font-display font-bold text-lg">💬 Student questions ${adminBadgeHtml()}</h2>
+                    ${canAsk ? '<button onclick="askNotifPermission()" class="text-xs font-semibold text-[#0b5a3c] hover:underline">🔔 Turn on alerts</button>' : ''}
+                </div>
+                <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Students ask from Answer review. You are alerted the moment a message arrives while the app is open.</p>
+                <div id="admin-inbox-list" class="space-y-2 max-h-72 overflow-y-auto">${adminInboxListHtml()}</div>
+                <div id="admin-chat">${adminChatHtml()}</div>
+            </div>`;
+        }
+
+        function paintAdminChat() {
+            const el = document.getElementById('admin-chat');
+            if (el) el.innerHTML = adminChatHtml();
+        }
+
+        async function openAdminThread(tid) {
+            const I = state.inbox;
+            if (I.unsub) { try { I.unsub(); } catch (_) {} I.unsub = null; }
+            I.open = tid; I.msgs = [];
+            updateAdminBadges();
+            paintAdminChat();
+            const box = document.getElementById('admin-chat');
+            if (box && box.scrollIntoView) box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            I.unsub = onSnapshot(query(collection(db, 'threads', tid, 'messages'), orderBy('createdAt', 'asc')), snap => {
+                if (I.open !== tid) return;
+                I.msgs = snap.docs.map(d => d.data());
+                const t = I.threads.find(x => x.id === tid);
+                const el = document.getElementById('admin-chat-msgs');
+                if (el) { el.innerHTML = chatMsgsHtml(I.msgs, 'admin', t && t.studentName); el.scrollTop = el.scrollHeight; }
+            }, err => console.error('admin chat listen', err));
+            const t = I.threads.find(x => x.id === tid);
+            if (t && t.unreadAdmin) { try { await updateDoc(doc(db, 'threads', tid), { unreadAdmin: false }); } catch (e) { console.error(e); } }
+        }
+
+        function closeAdminThread() {
+            const I = state.inbox;
+            if (I.unsub) { try { I.unsub(); } catch (_) {} I.unsub = null; }
+            I.open = null; I.msgs = [];
+            updateAdminBadges();
+            paintAdminChat();
+        }
+
+        async function sendAdminReply() {
+            const I = state.inbox, tid = I.open;
+            if (!tid || !state.isAdmin) return;
+            const inp = document.getElementById('admin-chat-input');
+            const text = (inp ? inp.value : '').trim().slice(0, 1000);
+            if (!text) return;
+            const btn = document.getElementById('admin-chat-send');
+            if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+            try {
+                await addDoc(collection(db, 'threads', tid, 'messages'), { uid: state.user.uid, role: 'admin', text, createdAt: serverTimestamp() });
+                await updateDoc(doc(db, 'threads', tid), { lastMessage: text.slice(0, 200), lastRole: 'admin', lastAt: serverTimestamp(), unreadStudent: true, unreadAdmin: false });
+                if (inp) inp.value = '';
+            } catch (e) { alert(friendlyError(e)); }
+            finally { const b = document.getElementById('admin-chat-send'); if (b) { b.disabled = false; b.textContent = 'Send reply'; } }
+        }
+
+        function askNotifPermission() {
+            try { Notification.requestPermission().then(() => { if (state.currentView === 'admin') render(); }); } catch (_) {}
+        }
+
+        async function openThreadFromToast(tid) {
+            if (state.currentView !== 'admin') await openAdmin();
+            openAdminThread(tid);
+        }
+
+        function notifyAdmin(t, id) {
+            showToast('💬 ' + (t.studentName || 'Student') + ': ' + (t.lastMessage || 'New question'), () => openThreadFromToast(id));
+            beep();
+            try {
+                if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+                    new Notification('New student question', { body: (t.studentName || 'Student') + ': ' + (t.lastMessage || '') });
+                }
+            } catch (_) {}
+        }
+
+        function stopMessaging() {
+            msgUnsubs.forEach(u => { try { u(); } catch (_) {} });
+            msgUnsubs = [];
+            if (state.inbox && state.inbox.unsub) { try { state.inbox.unsub(); } catch (_) {} }
+            state.inbox = { threads: [], open: null, msgs: [], unsub: null };
+            state.myThreads = {};
+            closeQChat(true);
+            adminFirstSnap = true;
+        }
+
+        function startMessaging() {
+            stopMessaging();
+            const uid = state.user && state.user.uid;
+            if (!uid) return;
+            try {
+                if (state.isAdmin) {
+                    msgUnsubs.push(onSnapshot(query(collection(db, 'threads'), orderBy('lastAt', 'desc'), limit(100)), snap => {
+                        state.inbox.threads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                        const viewing = id => state.inbox.open === id && state.currentView === 'admin';
+                        if (adminFirstSnap) {
+                            adminFirstSnap = false;
+                            const n = state.inbox.threads.filter(t => t.unreadAdmin).length;
+                            if (n) { showToast('💬 You have ' + n + ' unread student message' + (n > 1 ? 's' : ''), () => openAdmin()); beep(); }
+                        } else {
+                            snap.docChanges().forEach(c => {
+                                if (c.type === 'removed' || c.doc.metadata.hasPendingWrites) return;
+                                const t = c.doc.data();
+                                if (!(t.unreadAdmin && t.lastRole === 'student')) return;
+                                if (viewing(c.doc.id)) { updateDoc(doc(db, 'threads', c.doc.id), { unreadAdmin: false }).catch(() => {}); return; }
+                                notifyAdmin(t, c.doc.id);
+                            });
+                        }
+                        updateAdminBadges();
+                    }, err => console.error('inbox listen', err)));
+                } else {
+                    msgUnsubs.push(onSnapshot(query(collection(db, 'threads'), where('uid', '==', uid)), snap => {
+                        state.myThreads = {};
+                        snap.docs.forEach(d => { state.myThreads[d.id] = d.data(); });
+                        const fresh = [];
+                        snap.docChanges().forEach(c => {
+                            if (c.type === 'removed') return;
+                            const t = c.doc.data();
+                            if (!(t.unreadStudent && t.lastRole === 'admin')) return;
+                            if (state.chat && state.chat.tid === c.doc.id) { updateDoc(doc(db, 'threads', c.doc.id), { unreadStudent: false }).catch(() => {}); return; }
+                            fresh.push(t);
+                        });
+                        if (fresh.length) { showToast('💬 The admin replied to your question. Open Answer review to read it.'); beep(); }
+                    }, err => console.error('my threads listen', err)));
+                }
+            } catch (e) { console.error(e); }
+        }
+
         // Expose handlers used by inline onclick/onsubmit attributes
         Object.assign(window, {
+            openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
