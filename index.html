@@ -700,7 +700,7 @@
                         <h2 class="font-display font-bold text-2xl">Common questions</h2>
                         <div class="mt-4 bg-white border border-[#e8e2d2] rounded-2xl overflow-hidden">
                             ${[
-                                ['Is it free?', 'Creating an account is free, and so is practice (JAMB and WAEC/NECO/GCE) for your first 3 days. After that, you need a 1-year pass for ₦2,000 to keep signing in and using the app. One pass unlocks everything, including the full JAMB exam and WAEC/NECO/GCE papers. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your pass will be activated once the payment is confirmed.'],
+                                ['Is it free?', 'Creating an account is free, and so is practice (JAMB and WAEC/NECO/GCE) for your first month. After that, you need the 1-month plan for ₦500 to keep signing in and using the app. One plan unlocks everything, including the full JAMB exam and WAEC/NECO/GCE papers. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your plan will be activated once the payment is confirmed.'],
                                 ['What is WAEC/NECO/GCE mode?', 'You pick one subject and sit a timed paper of 60 questions. Answers are shown only after you submit, together with your score and a WAEC/NECO/GCE-style grade.'],
                                 ['Are these real JAMB questions?', 'No. They are practice questions written for this app, not official JAMB past questions. This platform is independent and not affiliated with JAMB.'],
                                 ['Do I have to verify my email?', 'Yes. After you register we send a verification link. Tap it, then sign in. If you cannot see the email, check your spam folder.'],
@@ -994,10 +994,10 @@
                 </div>`;
         }
 
-        // --- 1-YEAR PASS (full exams are paid; practice stays free) ---
-        const YEAR_DAYS = 365;
+        // --- 1-MONTH PLAN (₦500; full exams and practice need it once the free month is over) ---
+        const PLAN_DAYS = 30;
         const WA_NUMBER = '2349122866764';
-        const PASS_PRICE = '₦2,000';
+        const PASS_PRICE = '₦500';
         const HELPDESK_LINK = 'https://chat.whatsapp.com/HAv3RWHxSme2OYrog2HNBf?s=cl&p=a&iam=2';
 
         function hasActivePass() {
@@ -1033,8 +1033,8 @@
         function payWaUrl() {
             const u = state.user;
             const msg = u
-                ? 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year pass. Name: ' + u.name + '. Email: ' + u.email + '. My payment screenshot is attached.'
-                : 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-year pass. My name: ____ . My email: ____ . My payment screenshot is attached.';
+                ? 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-month plan. Name: ' + u.name + '. Email: ' + u.email + '. My payment screenshot is attached.'
+                : 'Hello, I have paid ' + PASS_PRICE + ' for the Genius Tutor 1-month plan. My name: ____ . My email: ____ . My payment screenshot is attached.';
             return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(msg);
         }
         function copyAcct(btn) {
@@ -1045,8 +1045,8 @@
         function goPay() { setView('pay'); window.scrollTo(0, 0); }
         function payBoxHtml() {
             return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 shadow-sm text-[#0b3d2b]">
-                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">GET YOUR 1-YEAR PASS</p>
-                <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} to unlock everything</h2>
+                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">ACTIVATE YOUR 1-MONTH PLAN</p>
+                <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} for 1 month, unlocks everything</h2>
                 <div class="mt-3 bg-[#e7f3ec] border border-[#cfe5d8] rounded-xl p-4">
                     <p class="text-[11px] text-[#0b3d2b]/60">Bank</p>
                     <p class="font-semibold text-sm">${esc(PAY_BANK)}</p>
@@ -1091,16 +1091,16 @@
         function examAccessHtml() {
             const P = state.pass;
             const u = state.user;
-            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            const wa = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-month plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
             if (hasActivePass()) {
                 const label = P && P.active ? 'Pass active until ' + fmtDate(P.expiresMs) : 'Admin access';
                 return `<p class="mt-4 text-xs font-semibold text-[#f4b731]">✓ ${esc(label)}</p>
                     <button onclick="openExamSetup()" class="mt-3 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>`;
             }
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Full exams and WAEC/NECO/GCE papers need a 1-year pass (${PASS_PRICE}). One pass unlocks everything.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Full exams and WAEC/NECO/GCE papers need a 1-month plan (${PASS_PRICE}). One pass unlocks everything.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
                     <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
@@ -1111,9 +1111,20 @@
             const u = state.user;
             let body;
             if (lb === null) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">Loading leaderboard…</p>`;
-            else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the leaderboard rule in your Firestore rules.' : 'The leaderboard is not available right now. Please try again later.'}</p>`;
-            else if (!lb.rows.length) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">No scores yet. Finish a full exam to be the first on the board.</p>`;
-            else {
+            else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the latest Firestore rules (leaderboard and leaderboard_public).' : 'The leaderboard is not available right now. Please try again later.'}</p>`;
+            else if (!lb.rows.length) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${lb.mode === 'names' ? 'No one yet.' : 'No scores yet.'} Finish a full exam to be the first on the board.</p>`;
+            else if (lb.mode === 'names') {
+                body = lb.rows.map((r, i) => {
+                    const me = r.id === u.uid;
+                    return `<div class="flex items-center gap-3 px-4 sm:px-5 py-3 ${i ? 'border-t border-[#efe9d9]' : ''} ${me ? 'bg-[#e1f3e8]' : ''}">
+                        <span class="w-8 text-center text-base">🎓</span>
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm font-semibold truncate">${esc(r.name || 'Student')}${me ? ' <span class="text-[11px] font-semibold text-[#0b5a3c]">(you)</span>' : ''}</p>
+                            <p class="text-[11px] text-[#0b3d2b]/55">Completed a full exam</p>
+                        </div>
+                    </div>`;
+                }).join('');
+            } else {
                 let prevRank = 0;
                 body = lb.rows.map((r, i) => {
                     const rank = i > 0 && r.bestScore === lb.rows[i - 1].bestScore ? prevRank : i + 1;
@@ -1132,13 +1143,13 @@
             }
             let footer = '';
             if (lb && !lb.error) {
-                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400 · Position #${lb.myRank ?? '–'}`;
+                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400` + (lb.mode === 'names' ? ' · Scores are private' : '');
             }
             return `
                 <div class="flex items-center justify-between mt-10 mb-3">
                     <div>
                         <h2 class="font-display font-bold text-xl">🏆 Leaderboard</h2>
-                        <p class="text-xs text-[#0b3d2b]/55">Top 10 · best full-exam score out of 400</p>
+                        <p class="text-xs text-[#0b3d2b]/55">${state.isAdmin ? 'Admin view: top 10 · best full-exam score out of 400' : 'Students who have completed a full exam'}</p>
                     </div>
                     <button onclick="refreshLeaderboard()" class="text-xs font-semibold text-[#0b5a3c] hover:underline">↻ Refresh</button>
                 </div>
@@ -1659,7 +1670,7 @@
         }
 
 // --- PROGRESS, HISTORY AND ANSWER REVIEW ---
-        // True when the 3 free days are over and the student has no active pass (admins and pass-check errors never lock).
+        // True when the 1-month free trial is over and the student has no active pass (admins and pass-check errors never lock).
         function isLockedOut() {
             if (!state.user || state.isAdmin || !state.pass || state.pass.error || state.pass.active) return false;
             const end = trialEndMs();
@@ -1678,7 +1689,7 @@
                     <main class="flex-1 px-4 pt-6 pb-10">
                         <div class="max-w-sm sm:max-w-md mx-auto">
                             <div class="bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed mb-4">
-                                ⏰ <strong>Your ${TRIAL_DAYS}-day free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-year pass (${PASS_PRICE}). It unlocks everything.
+                                ⏰ <strong>Your 1-month free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-month plan (${PASS_PRICE}). It unlocks everything.
                             </div>
                             ${payBoxHtml()}
                             <div class="flex flex-wrap gap-2 mt-4">
@@ -1696,6 +1707,7 @@
             if (isLockedOut()) { setView('locked'); window.scrollTo(0, 0); return; }
             if (resumeAttempt()) return;
             setView('dashboard');
+            maybeShowPlanReminder();
             if (state.history === null) {
                 state.leaderboard = null;
                 await loadHistory();
@@ -1712,31 +1724,38 @@
             return parts.length > 1 ? cap(parts[0]) + ' ' + parts[parts.length - 1].charAt(0).toUpperCase() + '.' : cap(parts[0]);
         }
 
+        // Students see WHO is on the leaderboard (leaderboard_public: names only). Scores live in the private `leaderboard`
+        // collection, which only the admin can read. Both are written here when a student's results change.
         async function loadLeaderboard() {
             try {
-                const top = () => getDocs(query(collection(db, 'leaderboard'), orderBy('bestScore', 'desc'), limit(10)));
-                let snap = await top();
+                const uid = state.user.uid;
                 const h = state.history || [];
                 const myBest = h.length ? Math.max(...h.map(x => x.scaledScore)) : null;
                 if (myBest !== null) {
-                    // keep my own leaderboard entry up to date (also adds exams taken before the leaderboard existed)
-                    const meRef = doc(db, 'leaderboard', state.user.uid);
-                    const meSnap = await getDoc(meRef);
-                    const cur = meSnap.exists() ? meSnap.data() : null;
-                    if (!cur || cur.bestScore !== myBest || cur.exams !== h.length) {
-                        await setDoc(meRef, { uid: state.user.uid, name: publicName(state.user.name), bestScore: myBest, exams: h.length, updatedAt: serverTimestamp() });
-                        snap = await top();
+                    const nm = publicName(state.user.name);
+                    const mark = myBest + '|' + h.length;
+                    let last = '';
+                    try { last = localStorage.getItem('gt_lb_' + uid) || ''; } catch (_) {}
+                    const pubRef = doc(db, 'leaderboard_public', uid);
+                    let needPublic = last !== mark;
+                    if (!needPublic) { const ps = await getDoc(pubRef); needPublic = !ps.exists() || ps.data().name !== nm; }
+                    if (needPublic) {
+                        try { await setDoc(pubRef, { uid, name: nm, updatedAt: serverTimestamp() }); } catch (e) { console.error('public leaderboard write', e); }
+                    }
+                    if (last !== mark) {
+                        try {
+                            await setDoc(doc(db, 'leaderboard', uid), { uid, name: nm, bestScore: myBest, exams: h.length, updatedAt: serverTimestamp() });
+                            try { localStorage.setItem('gt_lb_' + uid, mark); } catch (_) {}
+                        } catch (e) { console.error('private leaderboard write', e); }
                     }
                 }
-                const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                let myRank = null;
-                if (myBest !== null) {
-                    try {
-                        const c = await getCountFromServer(query(collection(db, 'leaderboard'), where('bestScore', '>', myBest)));
-                        myRank = c.data().count + 1;
-                    } catch (_) {}
+                if (state.isAdmin) {
+                    const snap = await getDocs(query(collection(db, 'leaderboard'), orderBy('bestScore', 'desc'), limit(10)));
+                    state.leaderboard = { mode: 'scores', rows: snap.docs.map(d => ({ id: d.id, ...d.data() })), myBest };
+                } else {
+                    const snap = await getDocs(query(collection(db, 'leaderboard_public'), orderBy('updatedAt', 'desc'), limit(20)));
+                    state.leaderboard = { mode: 'names', rows: snap.docs.map(d => ({ id: d.id, ...d.data() })), myBest };
                 }
-                state.leaderboard = { rows, myBest, myRank };
             } catch (err) {
                 console.error('Could not load leaderboard', err);
                 state.leaderboard = { error: err.code || 'error', rows: [] };
@@ -1948,7 +1967,7 @@
         }
 
         function openPractice() {
-            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); return; }
             if (state.psetup.subjects.length !== 3) state.psetup.subjects = defaultPicks();
             state.pickMsg = '';
             setView('practiceSetup');
@@ -2000,7 +2019,7 @@
         }
 
         function startPractice() {
-            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); showDashboard(); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); showDashboard(); return; }
             const ps = state.psetup;
             if (ps.subjects.length !== 3) return;
             const subs = ['english', ...ps.subjects];
@@ -2206,8 +2225,8 @@
         }
 
         // --- ADMIN (access controlled by the admins/{uid} document + Firestore rules) ---
-        // --- FREE TRIAL: practice is free for 3 days after registration, then needs the pass ---
-        const TRIAL_DAYS = 3;
+        // --- FREE TRIAL: practice is free for 1 month after registration, then needs the 1-month plan ---
+        const TRIAL_DAYS = 30;   // 1 month free trial
         const WAEC_PRACTICE_SECS_PER_Q = 60;   // WAEC/NECO/GCE pace: 60 questions in 60 minutes
 
         function trialEndMs() {
@@ -2224,35 +2243,71 @@
 
         function passWaUrl() {
             const u = state.user;
-            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-year pass (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
+            return 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent('Hello, I want a Genius Tutor 1-month plan (' + PASS_PRICE + '). Name: ' + u.name + '. Email: ' + u.email);
         }
 
         function practiceGateHtml(fn, label) {
             if (hasPracticeAccess()) return `<button onclick="${fn}" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">${label}</button>`;
             if (state.pass === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your ${TRIAL_DAYS} free days of practice have ended. Get the 1-year pass (${PASS_PRICE}) to keep practising.</div>
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-month plan (${PASS_PRICE}) to keep practising.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
                     <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
 
+        const REMIND_DAYS = 5;   // remind the student when 5 days or fewer are left
+        function daysLeft(ms) { return Math.ceil((ms - Date.now()) / 86400000); }
+        const plural = n => n + ' ' + (n === 1 ? 'day' : 'days');
+
         function trialBannerHtml() {
-            if (state.isAdmin || state.pass === null || hasActivePass()) return '';
+            if (state.isAdmin || state.pass === null || state.pass.error) return '';
+            const btn = label => `<button onclick="goPay()" class="inline-block mt-3 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-2.5 transition">${label}</button>`;
+            const amber = 'mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed';
+            if (hasActivePass()) {   // a paid month that is about to finish
+                const end = state.pass.expiresMs, d = daysLeft(end);
+                if (d > 0 && d <= REMIND_DAYS) return `<div class="${amber}">⏰ <strong>Reminder: your 1-month plan ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Renew for ${PASS_PRICE} so you do not lose access to your exams and practice.<br>${btn('Renew 1-month plan (' + PASS_PRICE + ')')}</div>`;
+                return '';
+            }
             const end = trialEndMs();
             if (!end) return '';
-            const left = end - Date.now();
-            const btn = `<button onclick="goPay()" class="inline-block mt-3 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-2.5 transition">Get a 1-year pass</button>`;
-            if (left > 0) {
-                const days = Math.ceil(left / 86400000);
-                return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>Free practice: ${days} ${days === 1 ? 'day' : 'days'} left</strong> (until ${esc(fmtDate(end))}). After that you need the 1-year pass (${PASS_PRICE}), which also unlocks the JAMB exam and WAEC/NECO/GCE papers.<br>${btn}</div>`;
-            }
-            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed">⏰ <strong>Your ${TRIAL_DAYS} free days of practice have ended.</strong> Get the 1-year pass (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn}</div>`;
+            const d = daysLeft(end);
+            if (d > REMIND_DAYS) return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>1 month free trial: ${plural(d)} left</strong> (until ${esc(fmtDate(end))}). After that you need the 1-month plan (${PASS_PRICE}), which also unlocks the JAMB exam and WAEC/NECO/GCE papers.</div>`;
+            if (d > 0) return `<div class="${amber}">⏰ <strong>Reminder: your free trial ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Activate the 1-month plan (${PASS_PRICE}) now so you can keep practising and take the JAMB exam and WAEC/NECO/GCE papers without a break.<br>${btn('Activate 1-month plan (' + PASS_PRICE + ')')}</div>`;
+            return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-month plan (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-month plan (' + PASS_PRICE + ')')}</div>`;
         }
+
+        // A pop-up reminder, shown once a day when 5 days or fewer are left (free trial or paid month)
+        function maybeShowPlanReminder() {
+            if (!state.user || state.isAdmin || state.pass === null || state.pass.error || state.currentView !== 'dashboard') return;
+            let kind = '', end = 0;
+            if (hasActivePass()) { end = state.pass.expiresMs; kind = 'plan'; } else { end = trialEndMs(); kind = 'trial'; }
+            if (!end) return;
+            const d = daysLeft(end);
+            if (d <= 0 || d > REMIND_DAYS) return;
+            const key = 'gt_remind_' + state.user.uid + '_' + kind + '_' + new Date().toISOString().slice(0, 10);
+            try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) {}
+            closePlanReminder();
+            const box = document.createElement('div');
+            box.id = 'plan-reminder';
+            box.className = 'fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4';
+            box.innerHTML = `<div class="bg-white text-[#0b3d2b] rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                <p class="text-3xl mb-2">⏰</p>
+                <h3 class="font-display font-bold text-lg">${kind === 'trial' ? 'Your free trial ends in ' + plural(d) : 'Your 1-month plan ends in ' + plural(d)}</h3>
+                <p class="text-sm leading-relaxed mt-2 text-[#2f5546]">${kind === 'trial'
+                    ? 'Activate the 1-month plan for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you can keep practising and take the full JAMB exam and WAEC/NECO/GCE papers.'
+                    : 'Renew for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you do not lose access.'}</p>
+                <div class="flex gap-2 mt-5">
+                    <button onclick="closePlanReminder(); goPay()" class="flex-1 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-3 transition">${kind === 'trial' ? 'Activate now' : 'Renew now'}</button>
+                    <button onclick="closePlanReminder()" class="px-4 py-3 text-sm font-semibold text-[#58796b] hover:text-[#0b3d2b]">Later</button>
+                </div></div>`;
+            document.body.appendChild(box);
+        }
+        function closePlanReminder() { const el = document.getElementById('plan-reminder'); if (el) el.remove(); }
 
         // --- WAEC/NECO/GCE PRACTICE: one subject, instant feedback, timed at WAEC/NECO/GCE pace ---
         function openWaecPractice() {
-            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); return; }
             setView('waecPracticeSetup');
             window.scrollTo(0, 0);
         }
@@ -2297,7 +2352,7 @@
         }
 
         function startWaecPractice() {
-            if (!hasPracticeAccess()) { alert('Your ' + TRIAL_DAYS + ' free days of practice have ended. Get the 1-year pass to continue.'); showDashboard(); return; }
+            if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-month plan to continue.'); showDashboard(); return; }
             const ws = state.wpsetup;
             const sub = ws.subject;
             const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS) : getRandomQuestions(sub, WAEC_PRACTICE_QS);
@@ -2334,9 +2389,9 @@
             const P = state.pass;
             if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-4 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-year pass (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 WAEC/NECO/GCE mode needs the 1-month plan (${PASS_PRICE}). The same pass also unlocks the full JAMB exam.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
-                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Get a 1-year pass</button>
+                    <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-month plan</button>
                     <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
                 </div>`;
         }
@@ -2627,8 +2682,7 @@
                         ${u.regNumber ? `<p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>` : ''}
                         <p class="text-xs font-semibold mt-2 ${active ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${active ? '✓ Pass until ' + esc(fmtDate(ms)) : (ms ? 'Pass expired ' + esc(fmtDate(ms)) : 'No pass')}</p>
                         <div class="flex flex-wrap gap-1.5 mt-2">
-                            <button onclick="grantPass('${esc(u.uid)}', ${YEAR_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 year</button>
-                            <button onclick="grantPass('${esc(u.uid)}', 30)" class="text-[11px] font-semibold border border-[#d9d4c3] hover:border-[#0b5a3c] rounded-lg px-2.5 py-1.5">+30 days</button>
+                            <button onclick="grantPass('${esc(u.uid)}', ${PLAN_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 month</button>
                             ${ms ? `<button onclick="removePass('${esc(u.uid)}')" class="text-[11px] font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50 rounded-lg px-2.5 py-1.5">Remove</button>` : ''}
                         </div>
                     </div>`;
@@ -2647,7 +2701,7 @@
             if (!u) return;
             const base = Math.max(Date.now(), state.adminData.passes[uid] || 0);
             const exp = base + days * 86400000;
-            if (!confirm('Give ' + u.name + ' ' + (days === 365 ? '1 year' : days + ' more days') + '? The pass will run until ' + fmtDate(exp) + '.')) return;
+            if (!confirm('Give ' + u.name + ' ' + (days === PLAN_DAYS ? '1 month' : days + ' more days') + '? The pass will run until ' + fmtDate(exp) + '.')) return;
             try {
                 await setDoc(doc(db, 'passes', uid), {
                     uid, name: u.name || '', regNumber: u.regNumber || '', days,
@@ -2695,7 +2749,7 @@
 
                         <div class="${card} p-5 mt-6">
                             <h2 class="font-display font-bold text-lg">Students and passes (${users.length})</h2>
-                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Full exams need an active pass. After a student pays you, tap +1 year on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
+                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Full exams need an active pass. After a student pays you, tap +1 month on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
                             <input type="search" value="${esc(state.adminFilter)}" oninput="setAdminFilter(this.value)" placeholder="Search by name, email or reg number" class="${inputCls} mb-4">
                             <div id="admin-students">${adminStudentsHtml()}</div>
                         </div>
@@ -2865,7 +2919,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
