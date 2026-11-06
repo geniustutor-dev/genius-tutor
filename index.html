@@ -472,7 +472,7 @@
                 stopMessaging();
                 state.user = null;
                 state.isAdmin = false;
-                if (state.currentView === 'loading') { state.currentView = 'home'; render(); }
+                if (state.currentView === 'loading') { state.currentView = wantsSettings() ? 'settings' : 'home'; render(); }
                 return;
             }
             if (awayTooLong() && !readResume(fbUser.uid)) { await forceLogout(AWAY_NOTICE); return; }
@@ -480,7 +480,8 @@
                 await loadProfile(fbUser);
                 touchActive();
                 if (['loading', 'login', 'register'].includes(state.currentView)) {
-                    showDashboard();
+                    if (state.currentView === 'loading' && wantsSettings()) { state.currentView = 'settings'; render(); }
+                    else showDashboard();
                 }
             } catch (e) {
                 console.error(e);
@@ -572,7 +573,7 @@
             const app = document.getElementById('app');
             const views = {
                 loading: renderLoading, home: renderHome, login: renderLogin, register: renderRegister, pay: renderPay, locked: renderLocked,
-                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, waecSetup: renderWaecSetup, waecPracticeSetup: renderWaecPracticeSetup, waec: renderWaec, waecResult: renderWaecResult, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin
+                dashboard: renderDashboard, review: renderReview, practiceSetup: renderPracticeSetup, examSetup: renderExamSetup, waecSetup: renderWaecSetup, waecPracticeSetup: renderWaecPracticeSetup, waec: renderWaec, waecResult: renderWaecResult, action: renderAction, practice: renderPractice, practiceResult: renderPracticeResult, exam: renderExam, result: renderResult, admin: renderAdmin, settings: renderSettings
             };
             app.innerHTML = (views[state.currentView] || renderLoading)();
             if (state.currentView === 'exam') updateTimerDisplay();
@@ -598,7 +599,7 @@
         function pushNav(v) { try { history.pushState({ gt: 1, v }, ''); } catch (_) {} }
         // where a history entry should lead right now (old entries may point at pages that no longer make sense)
         function navResolve(entry, cur) {
-            if (!state.user) return ['home', 'login', 'register'].includes(entry) ? entry : 'home';
+            if (!state.user) return ['home', 'login', 'register', 'settings'].includes(entry) ? entry : 'home';
             if (['result', 'practiceResult', 'waecResult'].includes(entry)) return (cur === 'review' && state.review && state.review.back === entry) ? entry : 'dashboard';
             if (['home', 'login', 'register', 'loading', 'action', 'exam', 'waec', 'practice', 'review', 'locked', 'admin'].includes(entry)) return 'dashboard';
             return entry;
@@ -766,7 +767,10 @@
 
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
-                        <a href="privacy.html" target="_blank" rel="noopener" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
+                        <span class="flex gap-4">
+                            <a href="privacy.html" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
+                            <button onclick="openSettings()" class="underline hover:text-[#0b3d2b]">Settings</button>
+                        </span>
                     </footer>
                 </div>`;
         }
@@ -1286,6 +1290,7 @@
                             <nav class="flex items-center gap-1 text-xs font-medium">
                                 <span class="px-3 py-1.5 rounded-lg bg-[#dcefe2] text-[#0b3d2b]">Dashboard</span>
                                 ${state.isAdmin ? `<button onclick="openAdmin()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Admin${adminBadgeHtml()}</button>` : ''}
+                                <button onclick="openSettings()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Settings</button>
                                 <button onclick="handleLogout()" class="px-3 py-1.5 rounded-lg text-[#0b3d2b]/70 hover:bg-[#f1ede0]">Sign out</button>
                             </nav>
                         </div>
@@ -1351,10 +1356,70 @@
                     <footer class="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
                         <span class="flex gap-4">
-                            <a href="privacy.html" target="_blank" rel="noopener" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
+                            <a href="privacy.html" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
+                            <button onclick="openSettings()" class="underline hover:text-[#0b3d2b]">Settings</button>
                             <button onclick="openDeleteAccount()" class="underline text-red-700 hover:text-red-800">Delete account</button>
                         </span>
                     </footer>
+                </div>`;
+        }
+
+        // --- SETTINGS ---
+        const PLAY_STORE_URL = '';   // paste the Google Play link here after the app is published; "Rate Us" will then open it
+        const SUPPORT_EMAIL = 'genius.tutor.app@gmail.com';
+        function openSettings() { setView('settings'); window.scrollTo(0, 0); }
+        // when the app is reopened by the Back button from privacy / terms / about, show Settings again
+        function wantsSettings() {
+            try { const st = history.state; if (st && st.gt && st.v === 'settings') return true; } catch (_) {}
+            if (location.hash === '#settings') {
+                try {
+                    history.replaceState({ gt: 1, v: 'home' }, '', location.pathname);
+                    history.pushState({ gt: 1, v: 'settings' }, '', location.pathname);
+                } catch (_) {}
+                return true;
+            }
+            return false;
+        }
+        function closeSettings() { if (state.user) showDashboard(); else setView('home'); window.scrollTo(0, 0); }
+        async function shareApp() {
+            const url = PLAY_STORE_URL || (location.origin + '/');
+            const text = 'Practise JAMB, WAEC, NECO and GCE questions in a real CBT setting with Genius Tutor.';
+            try {
+                if (navigator.share) { await navigator.share({ title: 'Genius Tutor CBT', text, url }); return; }
+            } catch (e) { if (e && e.name === 'AbortError') return; }
+            try { await navigator.clipboard.writeText(text + ' ' + url); alert('Link copied. You can now paste it to share.'); }
+            catch (_) { prompt('Copy this link to share:', url); }
+        }
+        function rateApp() {
+            if (PLAY_STORE_URL) { window.open(PLAY_STORE_URL, '_blank'); return; }
+            location.href = 'mailto:' + SUPPORT_EMAIL + '?subject=' + encodeURIComponent('Genius Tutor feedback');
+        }
+        function renderSettings() {
+            const rowCls = 'w-full flex items-center gap-4 bg-white border border-[#e8e2d2] hover:border-[#0b5a3c] rounded-2xl px-5 py-4 text-left text-sm font-semibold text-[#0b3d2b] shadow-sm transition';
+            const row = (ico, label, attrs, extra = '') => {
+                const tag = attrs.href ? 'a' : 'button';
+                const target = attrs.href ? `href="${attrs.href}"` : `onclick="${attrs.click}"`;
+                return `<${tag} ${target} class="${rowCls} ${extra}"><span class="text-lg w-6 text-center">${ico}</span><span class="flex-1">${label}</span><span class="text-[#58796b]">›</span></${tag}>`;
+            };
+            return `
+                <div class="flex-1 bg-[#faf8f2]">
+                    <div class="max-w-xl mx-auto p-4 sm:p-6">
+                        <div class="flex items-center gap-3 mb-5">
+                            <button onclick="closeSettings()" class="text-sm font-semibold text-[#0b5a3c] px-2 py-1.5 rounded-lg hover:bg-[#f1ede0]">← Back</button>
+                            <h2 class="font-display font-bold text-xl text-[#0b3d2b]">Settings</h2>
+                        </div>
+                        <div class="space-y-3">
+                            ${row('📤', 'Share App', { click: 'shareApp()' })}
+                            ${row('⭐', 'Rate Us', { click: 'rateApp()' })}
+                            ${row('🛡️', 'Privacy Policy', { href: 'privacy.html' })}
+                            ${row('📄', 'Terms of Use', { href: 'terms.html' })}
+                            ${row('ℹ️', 'About Us', { href: 'about.html' })}
+                            ${row('✉️', 'Contact Us', { href: 'mailto:' + SUPPORT_EMAIL })}
+                            ${state.user ? row('🚪', 'Sign out', { click: 'handleLogout()' }) : ''}
+                            ${(state.user && !state.isAdmin) ? row('🗑️', 'Delete account', { click: 'openDeleteAccount()' }, 'text-red-700') : ''}
+                        </div>
+                        <p class="text-center text-xs text-[#0b3d2b]/50 mt-8">© 2026 Genius Tutor CBT<br>Not affiliated with JAMB, WAEC or NECO.</p>
+                    </div>
                 </div>`;
         }
 
@@ -3458,7 +3523,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceGoSubject, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceGoSubject, openSettings, closeSettings, shareApp, rateApp, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
