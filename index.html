@@ -69,6 +69,7 @@
     <script src="mathematics.js"></script>
     <script src="citizenship.js"></script>
     <script src="digital.js"></script>
+    <script src="financialaccounting.js"></script>
     <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -128,7 +129,7 @@
             ['government', 'Government'],
             ['irs', 'Islamic Religious Studies'],
             ['literature', 'Literature in English'],
-            ['accounting', 'Accounting'],
+            ['accounting', 'Financial Accounting'],
             ['commerce', 'Commerce'],
             ['marketing', 'Marketing'],
             ['economics', 'Economics'],
@@ -146,13 +147,15 @@
             physics: window.PHYSICS,
             mathematics: window.MATHEMATICS,
             citizenship: window.CITIZENSHIP,
-            digital: window.DIGITAL
+            digital: window.DIGITAL,
+            accounting: window.FINANCIAL_ACCOUNTING
         };
 
         // WAEC/NECO/GCE question banks (kept apart from the JAMB banks above). Same row format.
         // To add another subject, load its file in the <head> and add a line here.
         const WAEC_BANKS = {
-            chemistry: window.CHEMISTRY_WAEC
+            chemistry: window.CHEMISTRY_WAEC,
+            accounting: window.FINANCIAL_ACCOUNTING
         };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
@@ -1569,7 +1572,7 @@
                     <div class="bg-[#faf8f2] border-b border-[#e8e2d2] px-4 sm:px-6 py-2.5 flex gap-2 overflow-x-auto">
                         ${state.examSubjects.map(sub => `
                             <button onclick="switchSubject('${sub}')" class="px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${state.activeSubject === sub ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-white text-[#58796b] hover:text-[#0b3d2b] border border-[#e8e2d2]'}">
-                                ${esc(sub)} (${state.examData[sub].length} Qs)
+                                ${esc(subjLabel(sub))} (${state.examData[sub].length} Qs)
                             </button>`).join('')}
                     </div>
                     </div>
@@ -1579,7 +1582,7 @@
                             <div>
                                 <div class="flex items-center justify-between mb-6">
                                     <span class="text-xs font-semibold px-3 py-1 rounded-full bg-[#e1f3e8] text-[#0b5a3c] border border-[#bfe0cd] uppercase">
-                                        ${esc(state.activeSubject)} — Question ${state.currentIndex + 1} of ${total}
+                                        ${esc(subjLabel(state.activeSubject))} — Question ${state.currentIndex + 1} of ${total}
                                     </span>
                                     <button onclick="toggleFlag()" class="text-xs font-semibold px-3 py-1 rounded-full border transition ${isFlagged ? 'bg-amber-500/20 text-amber-700 border-amber-500/40' : 'bg-[#eef1ec] text-[#58796b] border-[#d9d4c3] hover:text-[#0b3d2b]'}">
                                         ${isFlagged ? '🚩 Flagged' : '🏳️ Flag for Review'}
@@ -1596,13 +1599,13 @@
                                 </div>
                             </div>
                             <div class="flex items-center justify-between pt-6 mt-6 border-t border-[#e8e2d2]">
-                                <button onclick="prevQuestion()" ${state.currentIndex === 0 ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-xs hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
-                                <button onclick="nextQuestion()" ${state.currentIndex === total - 1 ? 'disabled' : ''} class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition">Next →</button>
+                                <button onclick="prevQuestion()" ${(state.currentIndex === 0 && state.examSubjects.indexOf(state.activeSubject) === 0) ? 'disabled' : ''} class="px-5 py-2.5 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-xs hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
+                                <button onclick="nextQuestion()" ${(state.currentIndex === total - 1 && state.examSubjects.indexOf(state.activeSubject) === state.examSubjects.length - 1) ? 'disabled' : ''} class="px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition">${(state.currentIndex === total - 1 && state.examSubjects.indexOf(state.activeSubject) < state.examSubjects.length - 1) ? 'Next subject →' : 'Next →'}</button>
                             </div>
                         </div>
 
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-4 sm:p-6 flex flex-col shadow-xl lg:sticky lg:top-32">
-                            <h4 class="font-bold text-[#0b3d2b] text-sm mb-2 uppercase tracking-wide">${esc(state.activeSubject)} Palette</h4>
+                            <h4 class="font-bold text-[#0b3d2b] text-sm mb-2 uppercase tracking-wide">${esc(subjLabel(state.activeSubject))} Palette</h4>
                             <p class="text-xs text-[#58796b] mb-4">Click any number to jump</p>
                             <div class="grid grid-cols-8 sm:grid-cols-10 lg:grid-cols-5 gap-1.5 mb-6">
                                 ${questions.map((_, idx) => {
@@ -1626,8 +1629,18 @@
         function switchSubject(sub) { state.activeSubject = sub; state.currentIndex = 0; render(); }
         function selectOption(i) { state.answers[`${state.activeSubject}-${state.currentIndex}`] = i; render(); }
         function toggleFlag() { const k = `${state.activeSubject}-${state.currentIndex}`; state.flagged[k] = !state.flagged[k]; render(); }
-        function nextQuestion() { if (state.currentIndex < state.examData[state.activeSubject].length - 1) { state.currentIndex++; render(); } }
-        function prevQuestion() { if (state.currentIndex > 0) { state.currentIndex--; render(); } }
+        function nextQuestion() {
+            if (state.currentIndex < state.examData[state.activeSubject].length - 1) { state.currentIndex++; render(); window.scrollTo(0, 0); return; }
+            // last question of a subject: go on to the first question of the next subject
+            const i = state.examSubjects.indexOf(state.activeSubject);
+            if (i >= 0 && i < state.examSubjects.length - 1) { state.activeSubject = state.examSubjects[i + 1]; state.currentIndex = 0; render(); window.scrollTo(0, 0); }
+        }
+        function prevQuestion() {
+            if (state.currentIndex > 0) { state.currentIndex--; render(); window.scrollTo(0, 0); return; }
+            // first question of a subject: go back to the last question of the previous subject
+            const i = state.examSubjects.indexOf(state.activeSubject);
+            if (i > 0) { const prev = state.examSubjects[i - 1]; state.activeSubject = prev; state.currentIndex = state.examData[prev].length - 1; render(); window.scrollTo(0, 0); }
+        }
         function jumpTo(i) { state.currentIndex = i; render(); }
         function confirmSubmit() { if (confirm('Are you sure you want to submit your complete 4-subject JAMB exam?')) submitExam(); }
 
@@ -2192,6 +2205,11 @@
             if (P.index > 0) { P.index--; render(); window.scrollTo(0, 0); }
         }
         function practiceJump(i) { state.practice.index = i; render(); window.scrollTo(0, 0); }
+        function practiceGoSubject(sub) {
+            const P = state.practice;
+            const i = P.items.findIndex(it => it.subject === sub);
+            if (i >= 0) { P.index = i; render(); window.scrollTo(0, 0); }
+        }
         function practiceFinishNow() {
             const P = state.practice;
             const left = P.items.length - Object.keys(P.answers).length;
@@ -2299,6 +2317,7 @@
                                 <button onclick="quitPractice()" class="text-xs text-[#58796b] hover:text-[#0b3d2b] font-semibold">✕ Leave</button>
                             </div>
                         </div>
+                        ${P.subjects.length > 1 ? `<div class="flex gap-2 overflow-x-auto pb-3 mb-1">${P.subjects.map(sub => `<button onclick="practiceGoSubject('${sub}')" class="px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wider transition whitespace-nowrap ${q.subject === sub ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-white text-[#58796b] border border-[#e8e2d2] hover:text-[#0b3d2b]'}">${esc(subjLabel(sub))}</button>`).join('')}</div>` : ''}
                         <div class="h-1.5 bg-[#eef1ec] rounded-full mb-4"><div class="h-1.5 bg-amber-400 rounded-full transition-all" style="width:${pct}%"></div></div>
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-6 shadow-xl">
                             <div class="flex items-center justify-between mb-5 text-xs">
@@ -2311,7 +2330,7 @@
                             <div class="space-y-3">${opts}</div>
                             <div class="flex items-center justify-between mt-6 pt-5 border-t border-[#e8e2d2]">
                                 <button onclick="practicePrev()" ${P.index === 0 ? 'disabled' : ''} class="px-5 py-3 rounded-xl bg-[#eef1ec] text-[#2f5546] font-semibold text-sm hover:bg-[#e1e7e0] disabled:opacity-40 disabled:cursor-not-allowed transition">← Previous</button>
-                                <button onclick="practiceNext()" class="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 transition">${isLast ? 'Submit' : 'Next →'}</button>
+                                <button onclick="practiceNext()" class="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm shadow-lg shadow-indigo-600/20 transition">${isLast ? 'Submit' : ((P.items[P.index + 1] && P.items[P.index + 1].subject !== q.subject) ? 'Next subject →' : 'Next →')}</button>
                             </div>
                         </div>
                         <div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 mt-4 shadow-xl">
@@ -3439,7 +3458,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceGoSubject, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
