@@ -64,16 +64,20 @@
     <script src="questions.js"></script>
     <script src="biology.js"></script>
     <script src="chemistry.js"></script>
+    <script src="chemistrywaec.js"></script>
     <script src="physics.js"></script>
     <script src="mathematics.js"></script>
     <script src="citizenship.js"></script>
+    <script src="digital.js"></script>
+    <script src="financialaccounting.js"></script>
     <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
         import {
             getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword,
             sendEmailVerification, sendPasswordResetEmail, signOut,
-            applyActionCode, verifyPasswordResetCode, confirmPasswordReset
+            applyActionCode, verifyPasswordResetCode, confirmPasswordReset,
+            deleteUser, reauthenticateWithCredential, EmailAuthProvider
         } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
         import {
             getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, Timestamp, getDocs, collection,
@@ -142,7 +146,15 @@
             chemistry: window.CHEMISTRY,
             physics: window.PHYSICS,
             mathematics: window.MATHEMATICS,
-            citizenship: window.CITIZENSHIP
+            citizenship: window.CITIZENSHIP,
+            digital: window.DIGITAL
+        };
+
+        // WAEC/NECO/GCE question banks (kept apart from the JAMB banks above). Same row format.
+        // To add another subject, load its file in the <head> and add a line here.
+        const WAEC_BANKS = {
+            chemistry: window.CHEMISTRY_WAEC,
+            accounting: window.FINANCIAL_ACCOUNTING
         };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
@@ -235,6 +247,21 @@
                 [all[i], all[j]] = [all[j], all[i]];
             }
             return all.slice(0, count);
+        }
+
+        // WAEC/NECO/GCE papers use the WAEC bank when a subject has one. If it holds fewer questions than needed,
+        // the general bank tops it up. Subjects without a WAEC bank keep using the general bank.
+        function waecPool(key, need) {
+            const own = (WAEC_BANKS[key] || []).filter(Boolean);
+            if (!own.length) return [];
+            if (own.length >= need) return own;
+            const have = new Set(own.map(r => keyOf(r)));
+            return own.concat((REAL_BANKS[key] || []).filter(r => !have.has(keyOf(r))));
+        }
+        function getWaecQuestions(key, count) {
+            const pool = waecPool(key, count);
+            if (pool.length) return shuffleArr(pool).slice(0, count).map(r => toItem(r));
+            return getRandomQuestions(key, count);
         }
 
         // --- MATHS DISPLAY: stacked fractions, matrices in rows and columns, roots, powers and diagrams ---
@@ -731,13 +758,14 @@
                             <div class="flex flex-col sm:flex-row sm:flex-wrap gap-2.5 mt-4">
                                 <a href="https://wa.me/qr/FU7ZUHWPZWQJD1" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">💬 Chat on WhatsApp</a>
                                 <a href="tel:+2349122866764" class="inline-flex items-center justify-center gap-2 border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-5 py-3 transition">📞 +234 912 286 6764</a>
-                                <a href="mailto:babajidehabeeb7@gmail.com" class="inline-flex items-center justify-center gap-2 border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-5 py-3 transition break-all">✉️ babajidehabeeb7@gmail.com</a>
+                                <a href="mailto:genius.tutor.app@gmail.com" class="inline-flex items-center justify-center gap-2 border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-5 py-3 transition break-all">✉️ genius.tutor.app@gmail.com</a>
                             </div>
                         </div>
                     </section>
 
                     <footer class="max-w-6xl mx-auto w-full px-4 sm:px-8 mt-12 mb-6 pt-5 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/60">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
+                        <a href="privacy.html" target="_blank" rel="noopener" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
                     </footer>
                 </div>`;
         }
@@ -774,7 +802,7 @@
                                         <label for="loginPassword" class="text-xs font-medium">Password</label>
                                         <button type="button" onclick="handleReset()" class="text-[11px] font-medium text-[#0b5a3c] hover:underline">Forgot password?</button>
                                     </div>
-                                    <input type="password" id="loginPassword" required autocomplete="current-password" class="${inputCls}">
+                                    <div class="relative"><input type="password" id="loginPassword" required autocomplete="current-password" class="${inputCls} pr-16"><button type="button" onclick="togglePw('loginPassword', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
                                 </div>
                                 <p id="login-error" class="text-xs text-red-600 min-h-[1rem]"></p>
                                 <button type="submit" id="login-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Sign in</button>
@@ -864,7 +892,11 @@
                                 </div>
                                 <div>
                                     <label for="regPassword" class="block text-xs font-medium mb-1.5">Password</label>
-                                    <input type="password" id="regPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls}">
+                                    <div class="relative"><input type="password" id="regPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls} pr-16"><button type="button" onclick="togglePw('regPassword', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
+                                </div>
+                                <div>
+                                    <label for="regPassword2" class="block text-xs font-medium mb-1.5">Confirm password</label>
+                                    <div class="relative"><input type="password" id="regPassword2" required minlength="6" placeholder="Type it again" autocomplete="new-password" class="${inputCls} pr-16"><button type="button" onclick="togglePw('regPassword2', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
                                 </div>
                                 <button type="submit" id="submit-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Create Account 📧</button>
                             </form>
@@ -881,6 +913,7 @@
             const name = document.getElementById('regFullName').value.trim();
             const email = document.getElementById('regEmailInput').value.trim();
             const password = document.getElementById('regPassword').value;
+            if (password !== document.getElementById('regPassword2').value) { alert('The two passwords do not match. Please type them again.'); return; }
 
             const btn = document.getElementById('submit-btn');
             btn.disabled = true; btn.textContent = 'Checking…';
@@ -1316,8 +1349,111 @@
 
                     <footer class="max-w-5xl xl:max-w-6xl mx-auto w-full px-4 mt-6 mb-6 pt-4 border-t border-[#e8e2d2] flex flex-wrap gap-2 justify-between text-xs text-[#0b3d2b]/55">
                         <span>© 2026 Genius Tutor CBT. Practice platform for JAMB/WAEC/NECO/GCE preparation.</span>
+                        <span class="flex gap-4">
+                            <a href="privacy.html" target="_blank" rel="noopener" class="underline hover:text-[#0b3d2b]">Privacy Policy</a>
+                            <button onclick="openDeleteAccount()" class="underline text-red-700 hover:text-red-800">Delete account</button>
+                        </span>
                     </footer>
                 </div>`;
+        }
+
+        // --- SHOW / HIDE PASSWORD ---
+        function togglePw(id, btn) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const show = el.type === 'password';
+            el.type = show ? 'text' : 'password';
+            btn.textContent = show ? 'Hide' : 'Show';
+        }
+
+        // --- DELETE ACCOUNT ---
+        function openDeleteAccount() {
+            if (!state.user || !auth.currentUser) return;
+            if (state.isAdmin) { alert('Admin accounts cannot be deleted from the app.'); return; }
+            closeDeleteAccount();
+            const ov = document.createElement('div');
+            ov.id = 'gt-delete-overlay';
+            ov.className = 'fixed inset-0 z-[200] bg-black/60 flex items-center justify-center p-4';
+            ov.innerHTML = `
+                <div class="bg-white text-[#0b3d2b] rounded-2xl p-5 w-full max-w-sm shadow-xl">
+                    <h3 class="font-display font-bold text-lg text-red-700">Delete your account?</h3>
+                    <p class="text-sm mt-2 leading-relaxed">This permanently deletes your account, your exam and practice history, your answer reviews, your leaderboard entry and your messages. Any paid plan on this account will also be lost. <strong>This cannot be undone.</strong></p>
+                    <label class="block text-xs font-semibold mt-4 mb-1" for="gt-delete-pw">Enter your password to confirm</label>
+                    <div class="relative"><input id="gt-delete-pw" type="password" autocomplete="current-password" class="w-full border border-[#d9d4c3] rounded-lg px-3 py-2.5 pr-16 text-sm text-[#0b3d2b]" placeholder="Password"><button type="button" onclick="togglePw('gt-delete-pw', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
+                    <p id="gt-delete-err" class="text-xs text-red-700 mt-2 min-h-[1rem]"></p>
+                    <div class="flex gap-2 mt-3">
+                        <button id="gt-delete-cancel" onclick="closeDeleteAccount()" class="flex-1 border border-[#d9d4c3] rounded-xl px-4 py-2.5 text-sm font-semibold">Cancel</button>
+                        <button id="gt-delete-go" onclick="confirmDeleteAccount()" class="flex-1 bg-red-700 hover:bg-red-800 text-white rounded-xl px-4 py-2.5 text-sm font-semibold">Delete forever</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(ov);
+            setTimeout(() => { const i = document.getElementById('gt-delete-pw'); if (i) i.focus(); }, 50);
+        }
+        function closeDeleteAccount() {
+            const ov = document.getElementById('gt-delete-overlay');
+            if (ov) ov.remove();
+        }
+        async function confirmDeleteAccount() {
+            const user = auth.currentUser;
+            const pwEl = document.getElementById('gt-delete-pw');
+            const errEl = document.getElementById('gt-delete-err');
+            const goBtn = document.getElementById('gt-delete-go');
+            const cancelBtn = document.getElementById('gt-delete-cancel');
+            if (!user || !state.user || !pwEl) return;
+            const password = pwEl.value;
+            if (!password) { errEl.textContent = 'Please enter your password.'; return; }
+            goBtn.disabled = true; cancelBtn.disabled = true; goBtn.textContent = 'Deleting…'; errEl.textContent = '';
+            const uid = user.uid;
+            const name = state.user.name;
+            try {
+                // 1. confirm it is really the owner (this also gives Firebase the fresh login it needs to delete an account)
+                await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, password));
+            } catch (err) {
+                goBtn.disabled = false; cancelBtn.disabled = false; goBtn.textContent = 'Delete forever';
+                errEl.textContent = (err.code === 'auth/invalid-credential' || err.code === 'auth/wrong-password')
+                    ? 'Incorrect password.' : friendlyError(err);
+                return;
+            }
+            try {
+                // 2. delete the student's data (each step is independent, so one failure does not stop the rest)
+                const attempt = async fn => { try { await fn(); } catch (e) { console.error('Delete step failed', e); } };
+                stopMessaging();
+                await attempt(async () => {
+                    const snap = await getDocs(query(collection(db, 'sessions'), where('uid', '==', uid)));
+                    for (const d of snap.docs) {
+                        await attempt(() => deleteDoc(doc(db, 'reviews', d.id)));
+                        await attempt(() => deleteDoc(d.ref));
+                    }
+                });
+                await attempt(async () => {
+                    const snap = await getDocs(query(collection(db, 'threads'), where('uid', '==', uid)));
+                    for (const t of snap.docs) {
+                        await attempt(async () => {
+                            const msgs = await getDocs(collection(db, 'threads', t.id, 'messages'));
+                            for (const m of msgs.docs) await attempt(() => deleteDoc(m.ref));
+                        });
+                        await attempt(() => deleteDoc(t.ref));
+                    }
+                });
+                await attempt(() => deleteDoc(doc(db, 'leaderboard', uid)));
+                await attempt(() => deleteDoc(doc(db, 'leaderboard_public', uid)));
+                await attempt(async () => { const k = await nameKey(name); if (k) await deleteDoc(doc(db, 'nameKeys', k)); });
+                await attempt(() => deleteDoc(doc(db, 'users', uid)));
+                // 3. delete the login itself, last
+                await deleteUser(user);
+            } catch (err) {
+                console.error(err);
+                goBtn.disabled = false; cancelBtn.disabled = false; goBtn.textContent = 'Delete forever';
+                errEl.textContent = 'Could not delete the account: ' + friendlyError(err) + ' Please try again, or email genius.tutor.app@gmail.com.';
+                return;
+            }
+            try {
+                ['gt_resume_' + uid, 'gt_seen_' + uid, 'gt_lb_' + uid].forEach(k => localStorage.removeItem(k));
+            } catch (_) {}
+            closeDeleteAccount();
+            state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            setView('home');
+            alert('Your account and data have been deleted.');
         }
 
         async function handleLogout() {
@@ -1869,6 +2005,7 @@
                 const E = window.ENGLISH;
                 return (E.general || []).length + (noNovel ? 0 : (E.novel || []).length) + Object.keys(E.passages || {}).length * 5;
             }
+            if (noNovel) { const pool = waecPool(sub, WAEC_QS); if (pool.length) return pool.length; }   // WAEC/NECO/GCE screens
             if (REAL_BANKS[sub] && REAL_BANKS[sub].length) return REAL_BANKS[sub].length;
             return 125;
         }
@@ -2362,7 +2499,7 @@
             if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); showDashboard(); return; }
             const ws = state.wpsetup;
             const sub = ws.subject;
-            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS, true) : getRandomQuestions(sub, WAEC_PRACTICE_QS);
+            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS, true) : getWaecQuestions(sub, WAEC_PRACTICE_QS);
             const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = items.length * WAEC_PRACTICE_SECS_PER_Q;
@@ -2447,7 +2584,7 @@
         async function startWaec() {
             if (!hasWaecAccess()) { alert('Your free trial has ended. Get the 1-year plan to use WAEC/NECO/GCE mode.'); showDashboard(); return; }
             const sub = state.wsetup.subject;
-            const raw = sub === 'english' ? buildEnglishExam(true) : getRandomQuestions(sub, WAEC_QS);
+            const raw = sub === 'english' ? buildEnglishExam(true) : getWaecQuestions(sub, WAEC_QS);
             const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = Math.round(items.length * (WAEC_MINUTES * 60 / WAEC_QS));
@@ -2828,6 +2965,7 @@
             e.preventDefault();
             const A = state.action;
             const pw = document.getElementById('newPassword').value;
+            if (pw !== document.getElementById('newPassword2').value) { document.getElementById('newpw-error').textContent = 'The two passwords do not match.'; return; }
             const btn = document.getElementById('newpw-btn');
             const errEl = document.getElementById('newpw-error');
             errEl.textContent = '';
@@ -2857,9 +2995,13 @@
                     <form onsubmit="handleNewPassword(event)" class="mt-5 space-y-4">
                         <div>
                             <label for="newPassword" class="block text-xs font-medium mb-1.5">New password</label>
-                            <input type="password" id="newPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls}">
+                            <div class="relative"><input type="password" id="newPassword" required minlength="6" placeholder="At least 6 characters" autocomplete="new-password" class="${inputCls} pr-16"><button type="button" onclick="togglePw('newPassword', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
                         </div>
-                        <p id="newpw-error" class="text-xs text-red-600 min-h-[1rem]"></p>
+                        <div>
+                                    <label for="newPassword2" class="block text-xs font-medium mb-1.5">Confirm new password</label>
+                                    <div class="relative"><input type="password" id="newPassword2" required minlength="6" placeholder="Type it again" autocomplete="new-password" class="${inputCls} pr-16"><button type="button" onclick="togglePw('newPassword2', this)" tabindex="-1" aria-label="Show or hide password" class="absolute inset-y-0 right-0 px-3 text-xs font-semibold text-[#0b5a3c]">Show</button></div>
+                                </div>
+                                <p id="newpw-error" class="text-xs text-red-600 min-h-[1rem]"></p>
                         <button type="submit" id="newpw-btn" class="w-full bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm py-2.5 rounded-lg transition">Save new password</button>
                     </form>`;
             } else if (A.status === 'done') {
@@ -3296,7 +3438,7 @@
         // Expose handlers used by inline onclick/onsubmit attributes
         Object.assign(window, {
             openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
-            setView, handleLogin, handleReset, handleRegister, handleLogout, startExamSession,
+            setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
             goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
