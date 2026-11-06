@@ -69,7 +69,6 @@
     <script src="mathematics.js"></script>
     <script src="citizenship.js"></script>
     <script src="digital.js"></script>
-    <script src="financialaccounting.js"></script>
     <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -153,8 +152,7 @@
         // WAEC/NECO/GCE question banks (kept apart from the JAMB banks above). Same row format.
         // To add another subject, load its file in the <head> and add a line here.
         const WAEC_BANKS = {
-            chemistry: window.CHEMISTRY_WAEC,
-            accounting: window.FINANCIAL_ACCOUNTING
+            chemistry: window.CHEMISTRY_WAEC
         };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
