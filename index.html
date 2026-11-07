@@ -2925,11 +2925,12 @@
         }
 
         function fmtTime(ts) { return ts && ts.toDate ? ts.toDate().toLocaleString() : '—'; }
+        function regMs(u) { return u && u.createdAt && u.createdAt.toMillis ? u.createdAt.toMillis() : 0; }
 
         function adminStudentsHtml() {
             const { users, passes } = state.adminData;
             const f = (state.adminFilter || '').trim().toLowerCase();
-            const list = users.filter(u => !f || [u.name, u.email, u.regNumber].some(v => String(v || '').toLowerCase().includes(f)));
+            const list = users.filter(u => !f || [u.name, u.email, u.regNumber].some(v => String(v || '').toLowerCase().includes(f))).sort((a, b) => regMs(b) - regMs(a));
             if (!list.length) return '<p class="text-sm text-[#0b3d2b]/60">No students match.</p>';
             const shown = list.slice(0, 60);
             return `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2940,6 +2941,7 @@
                         <p class="font-semibold text-sm">${esc(u.name)}</p>
                         <p class="text-xs text-[#0b5a3c] break-all mt-0.5">${esc(u.email)}</p>
                         ${u.regNumber ? `<p class="text-xs text-[#0b3d2b]/60 mt-1">Reg: ${esc(u.regNumber)}</p>` : ''}
+                        <p class="text-xs text-[#0b3d2b]/60 mt-1">Registered: ${regMs(u) ? esc(new Date(regMs(u)).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })) + ', ' + esc(new Date(regMs(u)).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })) : '—'}</p>
                         <p class="text-xs font-semibold mt-2 ${active ? 'text-[#0b5a3c]' : 'text-[#8a6500]'}">${active ? '✓ Pass until ' + esc(fmtDate(ms)) : (ms ? 'Pass expired ' + esc(fmtDate(ms)) : 'No pass')}</p>
                         <div class="flex flex-wrap gap-1.5 mt-2">
                             <button onclick="grantPass('${esc(u.uid)}', ${PLAN_DAYS})" class="text-[11px] font-semibold bg-[#066c43] hover:bg-[#055a37] text-white rounded-lg px-2.5 py-1.5">+1 year</button>
@@ -3011,7 +3013,7 @@
 
                         <div class="${card} p-5 mt-6">
                             <h2 class="font-display font-bold text-lg">Students and passes (${users.length})</h2>
-                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Everything needs an active pass once the 30-day trial is over. After a student pays you, tap +1 year on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
+                            <p class="text-xs text-[#0b3d2b]/60 mt-1 mb-3">Newest sign-ups are listed first. Everything needs an active pass once the 30-day trial is over. After a student pays you, tap +1 year on their card.${state.adminData.passesFailed ? ' <span class="text-rose-700 font-semibold">Passes could not load. Publish the new Firestore rules first.</span>' : ''}</p>
                             <input type="search" value="${esc(state.adminFilter)}" oninput="setAdminFilter(this.value)" placeholder="Search by name, email or reg number" class="${inputCls} mb-4">
                             <div id="admin-students">${adminStudentsHtml()}</div>
                         </div>
