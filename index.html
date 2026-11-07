@@ -3,7 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Genius Tutor CBT: UTME practice</title>
+    <title>Genius Tutor CBT: JAMB, WAEC and NECO CBT Practice</title>
+    <meta name="description" content="Practise JAMB UTME, WAEC, NECO and GCE questions in a real computer-based test (CBT) setting. Timed exams, practice at exam speed, instant marking and answer review.">
+    <link rel="canonical" href="https://genius-tutor-na1q.vercel.app/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Genius Tutor CBT">
+    <meta property="og:title" content="Genius Tutor CBT: JAMB, WAEC and NECO CBT Practice">
+    <meta property="og:description" content="Walk into your CBT exam hall already used to the screen. Timed exams, practice at real exam speed and answer review with explanations.">
+    <meta property="og:url" content="https://genius-tutor-na1q.vercel.app/">
+    <meta property="og:image" content="https://genius-tutor-na1q.vercel.app/icon-512.png">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Genius Tutor CBT: JAMB, WAEC and NECO CBT Practice">
+    <meta name="twitter:description" content="Practise JAMB, WAEC and NECO questions in a real CBT exam setting.">
     <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" content="#066c43">
     <meta name="mobile-web-app-capable" content="yes">
@@ -96,6 +107,17 @@
         const fbApp = initializeApp(firebaseConfig);
         const auth = getAuth(fbApp);
         const db = getFirestore(fbApp);
+
+        // The Play Store version opens this site from the Android app and Chrome reports that as the page referrer.
+        // Google Play does not allow other payment methods inside the app, so payment details are hidden there.
+        // The website itself (opened in a browser or installed from Chrome) keeps showing them.
+        const PLAY_APP_PACKAGE = 'app.vercel.genius_tutor_na1q.twa';   // must match the package ID in assetlinks.json
+        const IS_PLAY_APP = (() => {
+            try {
+                if (document.referrer && document.referrer.indexOf('android-app://' + PLAY_APP_PACKAGE) === 0) sessionStorage.setItem('gt_play', '1');
+                return sessionStorage.getItem('gt_play') === '1';
+            } catch (_) { return false; }
+        })();
 
         // --- QUESTION BANK (placeholder: replace with real questions) ---
         function generateSubjectBank(prefix, count) {
@@ -728,7 +750,9 @@
                         <h2 class="font-display font-bold text-2xl">Common questions</h2>
                         <div class="mt-4 bg-white border border-[#e8e2d2] rounded-2xl overflow-hidden">
                             ${[
-                                ['Is it free?', 'Creating an account is free, and for your first 30 days you get full access: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk group. After that, you need the 1-year plan for ₦2,000 to keep using the app. One plan unlocks everything for a whole year. Pay to the account shown on the sign-in page, send your payment screenshot on WhatsApp, and your plan will be activated once the payment is confirmed.'],
+                                ['Is it free?', IS_PLAY_APP
+                                    ? 'Creating an account is free, and for your first 30 days you get full access: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk group. After that, you need the 1-year plan to keep using the app. Ask your school, or email genius.tutor.app@gmail.com, to get your plan activated.'
+                                    : 'Creating an account is free, and for your first 30 days you get full access: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk group. After that, you need the 1-year plan for ₦2,000 to keep using the app. One plan unlocks everything for a whole year. Sign in to see the payment account on the plan page, send your payment screenshot on WhatsApp, and your plan will be activated once the payment is confirmed.'],
                                 ['What is WAEC/NECO/GCE mode?', 'You pick one subject and sit a timed paper of 60 questions. Answers are shown only after you submit, together with your score and a WAEC/NECO/GCE-style grade.'],
                                 ['Are these real JAMB questions?', 'They are practice questions written from JAMB past questions.'],
                                 ['Do I have to verify my email?', 'Yes. After you register we send a verification link. Tap it, then sign in. If you cannot see the email, check your spam folder.'],
@@ -816,7 +840,6 @@
                             <p class="text-center text-xs text-[#0b3d2b]/70 mt-5">New here? <button onclick="setView('register')" class="font-semibold text-[#0b5a3c] hover:underline">Create an account</button></p>
                             <p class="text-center mt-3"><button onclick="setView('home')" class="text-[11px] text-[#0b3d2b]/50 hover:text-[#0b3d2b]">← Back to home</button></p>
                         </div>
-                        <div class="max-w-sm sm:max-w-md mx-auto mt-5">${payBoxHtml()}</div>
                     </main>
                 </div>`;
         }
@@ -1034,6 +1057,8 @@
         const PLAN_DAYS = 365;   // 1-year pass
         const WA_NUMBER = '2349122866764';
         const PASS_PRICE = '₦2,000';
+        const priceParen = () => IS_PLAY_APP ? '' : ' (' + PASS_PRICE + ')';
+        const priceFor = () => IS_PLAY_APP ? '' : 'for ' + PASS_PRICE + ' ';
         const HELPDESK_LINK = 'https://chat.whatsapp.com/HAv3RWHxSme2OYrog2HNBf?s=cl&p=a&iam=2';
 
         function hasActivePass() {
@@ -1079,7 +1104,16 @@
             else prompt('Copy the account number:', PAY_ACCOUNT_NO);
         }
         function goPay() { setView('pay'); window.scrollTo(0, 0); }
+        function playAccessBoxHtml() {
+            return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 shadow-sm text-[#0b3d2b]">
+                <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">1-YEAR PLAN</p>
+                <h2 class="font-display font-bold text-lg mt-1">Get full access after your free trial</h2>
+                <p class="mt-3 text-sm leading-relaxed">Your 1-year plan unlocks everything. To get it activated, ask your school or contact Genius Tutor support. Once your plan is active, tap <strong>Check again</strong>.</p>
+                <a href="mailto:genius.tutor.app@gmail.com?subject=${encodeURIComponent('Genius Tutor 1-year plan')}" class="mt-4 block text-center bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Contact support</a>
+            </div>`;
+        }
         function payBoxHtml() {
+            if (IS_PLAY_APP) return playAccessBoxHtml();
             return `<div class="bg-white border border-[#e8e2d2] rounded-2xl p-5 shadow-sm text-[#0b3d2b]">
                 <p class="text-[10px] font-semibold tracking-[0.2em] text-[#0b5a3c]">ACTIVATE YOUR 1-YEAR PLAN</p>
                 <h2 class="font-display font-bold text-lg mt-1">Pay ${PASS_PRICE} for 1 year, unlocks everything</h2>
@@ -1116,7 +1150,7 @@
                         <div class="max-w-sm sm:max-w-md mx-auto">
                             ${payBoxHtml()}
                             <div class="flex flex-wrap gap-2 mt-4">
-                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">My payment is confirmed, check again</button>
+                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">${IS_PLAY_APP ? 'Check again' : 'My payment is confirmed, check again'}</button>
                                 <button onclick="showDashboard()" class="text-sm font-semibold text-[#0b5a3c] px-3 py-3 hover:underline">← Back to dashboard</button>
                             </div>
                         </div>
@@ -1139,10 +1173,10 @@
                     <button onclick="openExamSetup()" class="mt-3 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">Begin exam 🚀</button>`;
             }
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to unlock the full JAMB exam, WAEC/NECO/GCE papers, practice and the WhatsApp group.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan${priceParen()} to unlock the full JAMB exam, WAEC/NECO/GCE papers, practice and the WhatsApp group.${P.error ? ' (Could not check your pass right now. Try again.)' : ''}</div>
                 <div class="flex flex-wrap gap-2 mt-3">
                     <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
-                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">${IS_PLAY_APP ? 'Check again' : 'I have paid, check again'}</button>
                 </div>`;
         }
 
@@ -1903,11 +1937,11 @@
                     <main class="flex-1 px-4 pt-6 pb-10">
                         <div class="max-w-sm sm:max-w-md mx-auto">
                             <div class="bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed mb-4">
-                                ⏰ <strong>Your 1-month free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-year plan (${PASS_PRICE}). It unlocks everything.
+                                ⏰ <strong>Your 1-month free trial has ended.</strong> To keep using Genius Tutor CBT, get the 1-year plan${priceParen()}. It unlocks everything.
                             </div>
                             ${payBoxHtml()}
                             <div class="flex flex-wrap gap-2 mt-4">
-                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">My payment is confirmed, check again</button>
+                                <button onclick="refreshPass().then(showDashboard)" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">${IS_PLAY_APP ? 'Check again' : 'My payment is confirmed, check again'}</button>
                                 <button onclick="handleLogout()" class="text-sm font-semibold text-[#0b5a3c] px-3 py-3 hover:underline">Sign out</button>
                             </div>
                         </div>
@@ -2475,10 +2509,10 @@
         function practiceGateHtml(fn, label) {
             if (hasPracticeAccess()) return `<button onclick="${fn}" class="mt-5 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition self-start">${label}</button>`;
             if (state.pass === null) return `<p class="mt-5 text-sm text-[#0b3d2b]/60">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to keep practising.</div>
+            return `<div class="mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan${priceParen()} to keep practising.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
                     <button onclick="goPay()" class="bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
-                    <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                    <button onclick="refreshPass()" class="border border-[#d9d4c3] hover:border-[#0b5a3c] font-semibold text-sm rounded-xl px-4 py-3 transition">${IS_PLAY_APP ? 'Check again' : 'I have paid, check again'}</button>
                 </div>`;
         }
 
@@ -2492,15 +2526,15 @@
             const amber = 'mt-4 bg-[#f6ecc9] border border-[#ecdca4] text-[#8a6500] rounded-2xl p-4 text-sm leading-relaxed';
             if (hasActivePass()) {   // a paid month that is about to finish
                 const end = state.pass.expiresMs, d = daysLeft(end);
-                if (d > 0 && d <= REMIND_DAYS) return `<div class="${amber}">⏰ <strong>Reminder: your 1-year plan ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Renew for ${PASS_PRICE} so you do not lose access to your exams and practice.<br>${btn('Renew 1-year plan (' + PASS_PRICE + ')')}</div>`;
+                if (d > 0 && d <= REMIND_DAYS) return `<div class="${amber}">⏰ <strong>Reminder: your 1-year plan ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Renew ${priceFor()}so you do not lose access to your exams and practice.<br>${btn('Renew 1-year plan' + priceParen())}</div>`;
                 return '';
             }
             const end = trialEndMs();
             if (!end) return '';
             const d = daysLeft(end);
-            if (d > REMIND_DAYS) return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>1 month free trial: ${plural(d)} left</strong> (until ${esc(fmtDate(end))}). You have full access during the trial: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk. After that you need the 1-year plan (${PASS_PRICE}).</div>`;
-            if (d > 0) return `<div class="${amber}">⏰ <strong>Reminder: your free trial ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Activate the 1-year plan (${PASS_PRICE}) now so you can keep practising and take the JAMB exam and WAEC/NECO/GCE papers without a break.<br>${btn('Activate 1-year plan (' + PASS_PRICE + ')')}</div>`;
-            return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-year plan (${PASS_PRICE}) to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-year plan (' + PASS_PRICE + ')')}</div>`;
+            if (d > REMIND_DAYS) return `<div class="mt-4 bg-[#e7f3ec] border border-[#cfe5d8] rounded-2xl p-4 text-sm leading-relaxed">🎁 <strong>1 month free trial: ${plural(d)} left</strong> (until ${esc(fmtDate(end))}). You have full access during the trial: JAMB and WAEC/NECO/GCE exams and practice, plus the WhatsApp help desk. After that you need the 1-year plan${priceParen()}.</div>`;
+            if (d > 0) return `<div class="${amber}">⏰ <strong>Reminder: your free trial ends in ${plural(d)}</strong> (on ${esc(fmtDate(end))}). Activate the 1-year plan${priceParen()} now so you can keep practising and take the JAMB exam and WAEC/NECO/GCE papers without a break.<br>${btn('Activate 1-year plan' + priceParen())}</div>`;
+            return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-year plan${priceParen()} to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-year plan' + priceParen())}</div>`;
         }
 
         // A pop-up reminder, shown once a day when 5 days or fewer are left (free trial or paid month)
@@ -2521,8 +2555,8 @@
                 <p class="text-3xl mb-2">⏰</p>
                 <h3 class="font-display font-bold text-lg">${kind === 'trial' ? 'Your free trial ends in ' + plural(d) : 'Your 1-year plan ends in ' + plural(d)}</h3>
                 <p class="text-sm leading-relaxed mt-2 text-[#2f5546]">${kind === 'trial'
-                    ? 'Activate the 1-year plan for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you can keep practising and take the full JAMB exam and WAEC/NECO/GCE papers.'
-                    : 'Renew for ' + PASS_PRICE + ' before ' + esc(fmtDate(end)) + ' so you do not lose access.'}</p>
+                    ? 'Activate the 1-year plan ' + priceFor() + 'before ' + esc(fmtDate(end)) + ' so you can keep practising and take the full JAMB exam and WAEC/NECO/GCE papers.'
+                    : 'Renew ' + priceFor() + 'before ' + esc(fmtDate(end)) + ' so you do not lose access.'}</p>
                 <div class="flex gap-2 mt-5">
                     <button onclick="closePlanReminder(); goPay()" class="flex-1 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-3 transition">${kind === 'trial' ? 'Activate now' : 'Renew now'}</button>
                     <button onclick="closePlanReminder()" class="px-4 py-3 text-sm font-semibold text-[#58796b] hover:text-[#0b3d2b]">Later</button>
@@ -2615,10 +2649,10 @@
             const P = state.pass;
             if (hasWaecAccess()) return `<button onclick="openWaecSetup()" class="mt-4 bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition self-start">📝 Start a WAEC/NECO/GCE paper</button>`;
             if (P === null) return `<p class="mt-5 text-sm text-white/70">Checking your pass…</p>`;
-            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan (${PASS_PRICE}) to unlock WAEC/NECO/GCE mode. The same pass also unlocks the full JAMB exam.</div>
+            return `<div class="mt-4 bg-white/10 rounded-xl p-3 text-sm leading-relaxed">🔒 Your 1-month free trial has ended. Get the 1-year plan${priceParen()} to unlock WAEC/NECO/GCE mode. The same pass also unlocks the full JAMB exam.</div>
                 <div class="flex flex-wrap gap-2 mt-3">
                     <button onclick="goPay()" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-5 py-3 transition">Activate 1-year plan</button>
-                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">I have paid, check again</button>
+                    <button onclick="refreshPass()" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-4 py-3 transition">${IS_PLAY_APP ? 'Check again' : 'I have paid, check again'}</button>
                 </div>`;
         }
 
