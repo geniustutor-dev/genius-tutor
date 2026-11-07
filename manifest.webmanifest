@@ -1,6 +1,6 @@
 {
-  "name": "Genius Tutor CBT",
-  "short_name": "Genius Tutor",
+  "name": "Genius CBT",
+  "short_name": "Genius CBT",
   "description": "Practice for UTME, WAEC, NECO and GCE with timed CBT exams.",
   "start_url": "/",
   "scope": "/",
