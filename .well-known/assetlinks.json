@@ -1,8 +1,26 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "app.vercel.genius_tutor_na1q.twa",
-        "sha256_cert_fingerprints": ["44:7F:27:30:33:03:C8:B6:EC:E6:3D:71:3D:C7:3D:31:E5:62:01:8A:32:73:DC:97:8D:43:8E:F2:54:47:79:DE"]
-      }
-    }]
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.genius_tutor_na1q.twa",
+      "sha256_cert_fingerprints": [
+        "44:7F:27:30:33:03:C8:B6:EC:E6:3D:71:3D:C7:3D:31:E5:62:01:8A:32:73:DC:97:8D:43:8E:F2:54:47:79:DE"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.geniuscbt.app",
+      "sha256_cert_fingerprints": [
+        "44:7F:27:30:33:03:C8:B6:EC:E6:3D:71:3D:C7:3D:31:E5:62:01:8A:32:73:DC:97:8D:43:8E:F2:54:47:79:DE"
+      ]
+    }
+  }
+]
