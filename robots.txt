@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://genius-tutor-na1q.vercel.app/sitemap.xml
+Sitemap: https://geniuscbt.com/sitemap.xml

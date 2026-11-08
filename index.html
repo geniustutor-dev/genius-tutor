@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Genius CBT: JAMB, WAEC and NECO CBT Practice</title>
     <meta name="description" content="Practise JAMB UTME, WAEC, NECO and GCE questions in a real computer-based test (CBT) setting. Timed exams, practice at exam speed, instant marking and answer review.">
-    <link rel="canonical" href="https://genius-tutor-na1q.vercel.app/">
+    <link rel="canonical" href="https://geniuscbt.com/">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Genius CBT">
     <meta property="og:title" content="Genius CBT: JAMB, WAEC and NECO CBT Practice">
     <meta property="og:description" content="Walk into your CBT exam hall already used to the screen. Timed exams, practice at real exam speed and answer review with explanations.">
-    <meta property="og:url" content="https://genius-tutor-na1q.vercel.app/">
-    <meta property="og:image" content="https://genius-tutor-na1q.vercel.app/icon-512.png">
+    <meta property="og:url" content="https://geniuscbt.com/">
+    <meta property="og:image" content="https://geniuscbt.com/icon-512.png">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Genius CBT: JAMB, WAEC and NECO CBT Practice">
     <meta name="twitter:description" content="Practise JAMB, WAEC and NECO questions in a real CBT exam setting.">
@@ -76,6 +76,7 @@
     <script src="biology.js"></script>
     <script src="chemistry.js"></script>
     <script src="chemistrywaec.js"></script>
+    <script src="economicswaec.js"></script>
     <script src="physics.js"></script>
     <script src="mathematics.js"></script>
     <script src="citizenship.js"></script>
@@ -111,10 +112,11 @@
         // The Play Store version opens this site from the Android app and Chrome reports that as the page referrer.
         // Google Play does not allow other payment methods inside the app, so payment details are hidden there.
         // The website itself (opened in a browser or installed from Chrome) keeps showing them.
-        const PLAY_APP_PACKAGE = 'app.vercel.genius_tutor_na1q.twa';   // must match the package ID in assetlinks.json
+        // Package IDs of the Android app (must match package_name in .well-known/assetlinks.json). The first is the one already built; the second is the one to use for the Play release.
+        const PLAY_APP_PACKAGES = ['app.vercel.genius_tutor_na1q.twa', 'com.geniuscbt.app'];
         const IS_PLAY_APP = (() => {
             try {
-                if (document.referrer && document.referrer.indexOf('android-app://' + PLAY_APP_PACKAGE) === 0) sessionStorage.setItem('gt_play', '1');
+                if (document.referrer && PLAY_APP_PACKAGES.some(p => document.referrer.indexOf('android-app://' + p) === 0)) sessionStorage.setItem('gt_play', '1');
                 return sessionStorage.getItem('gt_play') === '1';
             } catch (_) { return false; }
         })();
@@ -177,6 +179,7 @@
         // To add another subject, load its file in the <head> and add a line here.
         const WAEC_BANKS = {
             chemistry: window.CHEMISTRY_WAEC,
+            economics: window.ECONOMICS_WAEC,
             accounting: window.FINANCIAL_ACCOUNTING
         };
 
@@ -742,7 +745,7 @@
 
                         <h2 class="font-display font-bold text-2xl mt-12">Subjects available</h2>
                         <div class="flex flex-wrap gap-2.5 mt-4">
-                            ${subjects.map(s => `<span class="text-sm bg-[#dcefe2] text-[#0b3d2b] rounded-full px-4 py-1.5">${esc(subjLabel(s))}${hasRealQuestions(s) ? '' : ' <span class="text-[10px] font-semibold text-[#8a6500] bg-[#f6ecc9] rounded-full px-2 py-0.5 ml-1">Coming soon</span>'}</span>`).join('')}
+                            ${subjects.map(s => `<span class="text-sm bg-[#dcefe2] text-[#0b3d2b] rounded-full px-4 py-1.5">${esc(subjLabel(s))}${hasWaecQuestions(s) ? '' : ' <span class="text-[10px] font-semibold text-[#8a6500] bg-[#f6ecc9] rounded-full px-2 py-0.5 ml-1">Coming soon</span>'}</span>`).join('')}
                         </div>
                     </section>
 
@@ -979,6 +982,10 @@
         const PRACTICE_SECS_PER_Q = 40;   // same pace as the real exam: 180 questions in 120 minutes
         let practiceInterval = null;
 
+        // true when the subject has real questions in the JAMB bank or in a WAEC bank (used by the WAEC screens)
+        function hasWaecQuestions(sub) {
+            return hasRealQuestions(sub) || !!(WAEC_BANKS[sub] && WAEC_BANKS[sub].filter(Boolean).length);
+        }
         function hasRealQuestions(sub) {
             if (sub === 'english') return !!window.ENGLISH;
             return !!(REAL_BANKS[sub] && REAL_BANKS[sub].length);
@@ -2587,7 +2594,7 @@
                         <span>${esc(subjLabel(sub))}</span>
                         <span class="w-5 h-5 shrink-0 rounded-full border flex items-center justify-center text-[11px] ${on ? 'bg-[#066c43] border-[#066c43] text-white' : 'border-[#c9c3ad] text-transparent'}">✓</span>
                     </span>
-                    ${hasRealQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
+                    ${hasWaecQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
                 </button>`;
             };
             const pill = on => `px-4 py-3 rounded-xl text-sm font-semibold border transition ${on ? 'bg-indigo-600 text-white border-[#0b5a3c]' : 'bg-[#faf8f2] text-[#2f5546] border-[#e8e2d2] hover:border-[#0b5a3c]'}`;
@@ -2675,7 +2682,7 @@
                         <span>${esc(subjLabel(sub))}</span>
                         <span class="w-5 h-5 shrink-0 rounded-full border flex items-center justify-center text-[11px] ${on ? 'bg-[#066c43] border-[#066c43] text-white' : 'border-[#c9c3ad] text-transparent'}">✓</span>
                     </span>
-                    ${hasRealQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
+                    ${hasWaecQuestions(sub) ? '' : '<span class="block text-[10px] font-medium text-[#8a6500] mt-1">Sample questions</span>'}
                 </button>`;
             };
             return `
