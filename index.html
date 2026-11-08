@@ -1196,19 +1196,27 @@
             else if (lb.error) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${state.isAdmin ? 'The leaderboard could not load (' + esc(lb.error) + '). Publish the latest Firestore rules (leaderboard and leaderboard_public).' : 'The leaderboard is not available right now (' + esc(lb.error) + '). Please try again later.'}</p>`;
             else if (!lb.rows.length) body = `<p class="p-5 text-sm text-[#0b3d2b]/60">${lb.mode === 'names' ? 'No one yet.' : 'No scores yet.'} Finish a full exam to be the first on the board.</p>`;
             else if (lb.mode === 'names') {
-                body = lb.rows.map((r, i) => {
-                    const me = r.id === u.uid;
-                    return `<div class="flex items-center gap-3 px-4 sm:px-5 py-3 ${i ? 'border-t border-[#efe9d9]' : ''} ${me ? 'bg-[#e1f3e8]' : ''}">
-                        <span class="w-8 text-center text-base">🎓</span>
+                // the admin publishes the positions (names and numbers only); scores are never sent to students
+                const ranked = lb.rows.map(r => ({ r, rank: typeof r.rank === 'number' ? r.rank : null }));
+                const badge = rank => `<span class="w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${rank === 1 ? 'bg-[#f4b731] text-[#4a3500]' : rank === 2 ? 'bg-[#d8dde2] text-[#33404a]' : rank === 3 ? 'bg-[#e6b88a] text-[#5a3410]' : 'bg-[#eef1ec] text-[#0b3d2b]/70'}">${rank === null ? '•' : rank}</span>`;
+                const rowHtml = (x, first) => {
+                    const me = x.r.id === u.uid;
+                    return `<div class="flex items-center gap-3 px-4 sm:px-5 py-3 ${first ? '' : 'border-t border-[#efe9d9]'} ${me ? 'bg-[#e1f3e8]' : ''}">
+                        ${badge(x.rank)}
                         <div class="min-w-0 flex-1">
-                            <p class="text-sm font-semibold truncate">${esc(r.name || 'Student')}${me ? ' <span class="text-[11px] font-semibold text-[#0b5a3c]">(you)</span>' : ''}</p>
+                            <p class="text-sm font-semibold truncate">${esc(x.r.name || 'Student')}${me ? ' <span class="text-[11px] font-semibold text-[#0b5a3c]">(you)</span>' : ''}</p>
                             <p class="text-[11px] text-[#0b3d2b]/55">Completed a full exam</p>
                         </div>
                     </div>`;
-                }).join('');
+                };
+                const top = ranked.slice(0, 10);
+                body = top.map((x, i) => rowHtml(x, i === 0)).join('');
+                const mine = ranked.findIndex(x => x.r.id === u.uid);
+                if (mine >= 10) body += `<p class="text-center text-[#0b3d2b]/40 leading-none py-1">⋮</p>` + rowHtml(ranked[mine], true);
+                lb._myRank = mine >= 0 ? ranked[mine].rank : null;
             } else {
                 let prevRank = 0;
-                body = lb.rows.map((r, i) => {
+                body = lb.rows.slice(0, 10).map((r, i) => {
                     const rank = i > 0 && r.bestScore === lb.rows[i - 1].bestScore ? prevRank : i + 1;
                     prevRank = rank;
                     const me = r.id === u.uid;
@@ -1225,7 +1233,7 @@
             }
             let footer = '';
             if (lb && !lb.error) {
-                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400` + (lb.mode === 'names' ? ' · Scores are private' : '');
+                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400` + (lb.mode === 'names' ? (lb._myRank ? ' · Your position: ' + lb._myRank : ' · Your position will show after the next ranking update') + ' · Scores are private' : '');
             }
             return `
                 <div class="flex items-center justify-between mt-10 mb-3">
@@ -1986,14 +1994,22 @@
                 const uid = state.user.uid;
                 const h = state.history || [];
                 const myBest = h.length ? Math.max(...h.map(x => x.scaledScore)) : null;
-                if (myBest !== null) {
+                if (state.isAdmin) {
+                    // the admin is not a competitor: make sure no leaderboard entry exists for this account (checked once per device)
+                    let done = ''; try { done = localStorage.getItem('gt_lbadmin_' + uid) || ''; } catch (_) {}
+                    if (!done) {
+                        try { await deleteDoc(doc(db, 'leaderboard_public', uid)); } catch (_) {}
+                        try { await deleteDoc(doc(db, 'leaderboard', uid)); } catch (_) {}
+                        try { localStorage.setItem('gt_lbadmin_' + uid, '1'); } catch (_) {}
+                    }
+                } else if (myBest !== null) {
                     const nm = publicName(state.user.name);
                     const mark = myBest + '|' + h.length;
                     let last = '';
                     try { last = localStorage.getItem('gt_lb_' + uid) || ''; } catch (_) {}
                     const pubRef = doc(db, 'leaderboard_public', uid);
                     let needPublic = last !== mark;
-                    if (!needPublic) { const ps = await getDoc(pubRef); needPublic = !ps.exists() || ps.data().name !== nm; }
+                    if (!needPublic) { const ps = await getDoc(pubRef); needPublic = !ps.exists() || ps.data().name !== nm || ps.data().bestScore !== undefined; }
                     if (needPublic) {
                         try { await setDoc(pubRef, { uid, name: nm, updatedAt: serverTimestamp() }); } catch (e) { console.error('public leaderboard write', e); }
                     }
@@ -2005,11 +2021,35 @@
                     }
                 }
                 if (state.isAdmin) {
-                    const snap = await getDocs(query(collection(db, 'leaderboard'), orderBy('bestScore', 'desc'), limit(10)));
-                    state.leaderboard = { mode: 'scores', rows: snap.docs.map(d => ({ id: d.id, ...d.data() })), myBest };
+                    const snap = await getDocs(query(collection(db, 'leaderboard'), orderBy('bestScore', 'desc'), limit(50)));
+                    const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    state.leaderboard = { mode: 'scores', rows, myBest };
+                    // publish the positions (names and numbers only, never scores) for the students' leaderboard
+                    try {
+                        const board = [];
+                        rows.filter(r => r.id !== state.user.uid).forEach((r, i) => {
+                            const rank = i > 0 && board[i - 1].score === r.bestScore ? board[i - 1].rank : i + 1;
+                            board.push({ uid: r.id, name: r.name || 'Student', rank, score: r.bestScore });
+                        });
+                        const out = board.map(({ uid, name, rank }) => ({ uid, name, rank }));
+                        const ref = doc(db, 'leaderboard_top', 'board');
+                        const cur = await getDoc(ref);
+                        if (!cur.exists() || JSON.stringify(cur.data().rows || []) !== JSON.stringify(out)) {
+                            await setDoc(ref, { rows: out, updatedAt: serverTimestamp() });
+                        }
+                    } catch (e) { console.error('publish ranking', e); }
                 } else {
-                    const snap = await getDocs(query(collection(db, 'leaderboard_public'), orderBy('updatedAt', 'desc'), limit(20)));
-                    state.leaderboard = { mode: 'names', rows: snap.docs.map(d => ({ id: d.id, ...d.data() })), myBest };
+                    let rows = null;
+                    try {
+                        const bs = await getDoc(doc(db, 'leaderboard_top', 'board'));
+                        if (bs.exists() && Array.isArray(bs.data().rows)) rows = bs.data().rows.map(r => ({ id: r.uid, name: r.name, rank: r.rank }));
+                    } catch (e) { console.error('read ranking', e); }
+                    if (rows === null) {
+                        // ranking not published yet: show who has completed a full exam (no positions)
+                        const snap = await getDocs(query(collection(db, 'leaderboard_public'), orderBy('updatedAt', 'desc'), limit(20)));
+                        rows = snap.docs.map(d => ({ id: d.id, name: d.data().name, rank: null }));
+                    }
+                    state.leaderboard = { mode: 'names', rows, myBest };
                 }
             } catch (err) {
                 console.error('Could not load leaderboard', err);
