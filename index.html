@@ -1237,15 +1237,160 @@
 
         // --- LEADERBOARD CARD (dashboard) ---
         function studyStreak() {
-            const all = [...(state.history || []), ...(state.practiceHistory || []), ...(state.waecHistory || [])];
-            const day = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
-            const days = new Set(all.map(x => x.startedAt && x.startedAt.toMillis ? day(x.startedAt.toMillis()) : 0).filter(Boolean));
+            const days = studyDaySet();
             if (!days.size) return 0;
             let t = Date.now(), n = 0;
-            if (!days.has(day(t))) t -= 86400000;
-            while (days.has(day(t))) { n++; t -= 86400000; }
+            if (!days.has(dayKey(t))) t -= 86400000;
+            while (days.has(dayKey(t))) { n++; t -= 86400000; }
             return n;
         }
+        // --- STREAK: day set, popup after login, and a shareable WhatsApp picture ---
+        const dayKey = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
+        function studyDaySet() {
+            const all = [...(state.history || []), ...(state.practiceHistory || []), ...(state.waecHistory || [])];
+            return new Set(all.map(x => x.startedAt && x.startedAt.toMillis ? dayKey(x.startedAt.toMillis()) : 0).filter(Boolean));
+        }
+        // Monday to Sunday of this week: { label, done, today, future }
+        function streakWeek() {
+            const days = studyDaySet(), now = new Date(), todayKey = dayKey(now.getTime());
+            const dow = (now.getDay() + 6) % 7;
+            return ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((label, i) => {
+                const k = dayKey(now.getTime() + (i - dow) * 86400000);
+                return { label, done: days.has(k), today: k === todayKey, future: k > todayKey };
+            });
+        }
+        const FLAME_OUTER = 'M50 4C56 28 88 44 88 82C88 110 70 126 50 126C30 126 12 110 12 82C12 60 26 48 34 36C36 50 42 54 46 54C42 36 44 18 50 4Z';
+        const FLAME_INNER = 'M50 70C54 84 70 90 70 104C70 116 60 124 50 124C40 124 30 116 30 104C30 92 44 84 50 70Z';
+        function flameSvg(size) {
+            return `<svg width="${size}" height="${Math.round(size * 1.3)}" viewBox="0 0 100 130" aria-hidden="true"><defs><linearGradient id="fl1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb02e"/><stop offset="1" stop-color="#ff4d1a"/></linearGradient></defs><path d="${FLAME_OUTER}" fill="url(#fl1)"/><path d="${FLAME_INNER}" fill="#ffe27a"/></svg>`;
+        }
+        function streakMessage(n, doneToday) {
+            if (!doneToday) return n === 1 ? 'Practise today to make it 2 days in a row!' : 'Practise today to keep your ' + n + '-day streak alive!';
+            if (n >= 30) return 'A whole month of showing up. You are unstoppable!';
+            if (n >= 14) return 'Two weeks strong. Your exam hall will feel like home.';
+            if (n >= 7) return 'A full week of practice. Keep it burning!';
+            if (n >= 3) return 'You are building a real habit. Keep going!';
+            return 'Great start! Come back tomorrow to grow it.';
+        }
+
+        let streakAsked = false;
+        function closeStreakPopup() { const b = document.getElementById('streak-popup'); if (b) b.remove(); }
+        function maybeShowStreakPopup() {
+            if (streakAsked || !state.user || state.isAdmin || state.currentView !== 'dashboard' || state.history === null) return;
+            const n = studyStreak();
+            if (n < 1) return;
+            streakAsked = true;
+            closeStreakPopup();
+            const week = streakWeek();
+            const doneToday = week.some(d => d.today && d.done);
+            const first = (state.user.name || '').trim().split(/\s+/)[0] || '';
+            const dots = week.map(d => `<div class="flex flex-col items-center gap-1.5">
+                    <span class="text-[11px] font-semibold ${d.today ? 'text-[#f4b731]' : 'text-white/60'}">${d.label}</span>
+                    <span class="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${d.done ? 'bg-[#f4b731] text-[#4a3500]' : 'bg-white/10 text-transparent'} ${d.today ? 'ring-2 ring-[#f4b731] ring-offset-2 ring-offset-[#0b5a3c]' : ''}">${d.done ? '✓' : '·'}</span>
+                </div>`).join('');
+            const box = document.createElement('div');
+            box.id = 'streak-popup';
+            box.className = 'fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4';
+            box.onclick = e => { if (e.target === box) closeStreakPopup(); };
+            box.innerHTML = `<div class="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden text-white text-center" style="background:linear-gradient(160deg,#0f7a50 0%,#0b5a3c 55%,#04150f 100%)">
+                <div class="px-6 pt-7 pb-2">
+                    <div class="flex justify-center">${flameSvg(84)}</div>
+                    <p class="font-display font-extrabold leading-none mt-2" style="font-size:72px;color:#f4b731">${n}</p>
+                    <p class="font-display font-bold text-xl mt-1">day streak</p>
+                    <p class="text-sm text-white/80 mt-3 leading-relaxed">${esc(first ? first + ', ' : '')}${esc(streakMessage(n, doneToday)).replace(/^./, c => first ? c.toLowerCase() : c)}</p>
+                    <div class="flex justify-center gap-2.5 mt-5">${dots}</div>
+                </div>
+                <div class="px-6 pb-6 pt-5">
+                    <button id="streak-share-btn" onclick="shareStreak()" class="w-full bg-[#25d366] hover:bg-[#1fbd5b] text-[#04150f] font-bold text-sm rounded-xl px-4 py-3.5 transition flex items-center justify-center gap-2">Share on WhatsApp</button>
+                    <button onclick="closeStreakPopup()" class="w-full mt-2 py-3 text-sm font-semibold text-white/80 hover:text-white">Continue</button>
+                </div></div>`;
+            document.body.appendChild(box);
+        }
+
+        function loadImg(src) { return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+        async function makeStreakImage(n) {
+            const W = 1080, H = 1350;
+            const c = document.createElement('canvas'); c.width = W; c.height = H;
+            const g = c.getContext('2d');
+            try { await Promise.all([document.fonts.load('800 300px "Bricolage Grotesque"'), document.fonts.load('600 40px "Inter"')]); } catch (_) {}
+            const F = '"Bricolage Grotesque", "Inter", Arial, sans-serif';
+            // background
+            let bg = g.createLinearGradient(0, 0, W * 0.4, H);
+            bg.addColorStop(0, '#0f7a50'); bg.addColorStop(0.55, '#0b5a3c'); bg.addColorStop(1, '#04150f');
+            g.fillStyle = bg; g.fillRect(0, 0, W, H);
+            let glow = g.createRadialGradient(W / 2, 430, 20, W / 2, 430, 520);
+            glow.addColorStop(0, 'rgba(255,176,46,0.35)'); glow.addColorStop(1, 'rgba(255,176,46,0)');
+            g.fillStyle = glow; g.fillRect(0, 0, W, H);
+            g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+            // header: logo + brand
+            const logo = await loadImg('/icon-192.png');
+            if (logo) {
+                g.save(); g.beginPath(); g.roundRect(W / 2 - 250, 70, 96, 96, 22); g.clip(); g.drawImage(logo, W / 2 - 250, 70, 96, 96); g.restore();
+            }
+            const hx = logo ? W / 2 - 138 : W / 2;
+            g.textAlign = logo ? 'left' : 'center'; g.fillStyle = '#fff'; g.font = '800 44px ' + F; g.fillText('GENIUS CBT', hx, 118);
+            g.fillStyle = '#f4b731'; g.font = '700 24px ' + F; g.fillText('UTME · WAEC · NECO', hx, 154);
+            g.textAlign = 'center';
+            // flame
+            g.save(); g.translate(W / 2 - 130, 195); g.scale(2.6, 2.6);
+            let fg = g.createLinearGradient(0, 0, 0, 130); fg.addColorStop(0, '#ffb02e'); fg.addColorStop(1, '#ff4d1a');
+            g.fillStyle = fg; g.fill(new Path2D(FLAME_OUTER));
+            g.fillStyle = '#ffe27a'; g.fill(new Path2D(FLAME_INNER));
+            g.restore();
+            // number + label
+            g.fillStyle = '#f4b731'; g.font = '800 300px ' + F; g.fillText(String(n), W / 2, 820);
+            g.fillStyle = '#fff'; g.font = '800 84px ' + F; g.fillText(n === 1 ? 'day streak' : 'day streak', W / 2, 910);
+            const first = ((state.user && state.user.name) || '').trim().split(/\s+/)[0] || '';
+            if (first) {
+                const nm = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
+                g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = '600 40px ' + F; g.fillText(nm + ' is practising every day!', W / 2, 980);
+            }
+            // week row
+            const week = streakWeek(), gap = 120, x0 = W / 2 - gap * 3, y = 1090;
+            week.forEach((d, i) => {
+                const x = x0 + i * gap;
+                g.fillStyle = d.today ? '#f4b731' : 'rgba(255,255,255,0.65)'; g.font = '700 28px ' + F; g.fillText(d.label, x, y - 50);
+                g.beginPath(); g.arc(x, y, 34, 0, Math.PI * 2);
+                g.fillStyle = d.done ? '#f4b731' : 'rgba(255,255,255,0.12)'; g.fill();
+                if (d.today) { g.lineWidth = 4; g.strokeStyle = '#f4b731'; g.beginPath(); g.arc(x, y, 44, 0, Math.PI * 2); g.stroke(); }
+                if (d.done) {
+                    g.strokeStyle = '#4a3500'; g.lineWidth = 8; g.lineCap = 'round'; g.lineJoin = 'round';
+                    g.beginPath(); g.moveTo(x - 14, y + 1); g.lineTo(x - 4, y + 12); g.lineTo(x + 16, y - 11); g.stroke();
+                }
+            });
+            // footer
+            g.fillStyle = 'rgba(255,255,255,0.12)'; g.fillRect(0, H - 140, W, 140);
+            g.fillStyle = '#fff'; g.font = '700 38px ' + F; g.fillText('Practise JAMB, WAEC & NECO with me', W / 2, H - 78);
+            g.fillStyle = '#f4b731'; g.font = '800 44px ' + F; g.fillText('geniuscbt.com', W / 2, H - 28);
+            return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('image failed')), 'image/png'));
+        }
+        async function shareStreak() {
+            const btn = document.getElementById('streak-share-btn');
+            const n = studyStreak();
+            const link = 'https://geniuscbt.com';
+            const text = '🔥 I am on a ' + n + '-day streak on Genius CBT! Practise JAMB, WAEC & NECO with me: ' + link;
+            if (btn) { btn.disabled = true; btn.textContent = 'Preparing picture…'; }
+            try {
+                const blob = await makeStreakImage(n);
+                const file = new File([blob], 'genius-cbt-streak.png', { type: 'image/png' });
+                if (navigator.canShare && navigator.canShare({ files: [file] })) {
+                    try { await navigator.share({ files: [file], text }); return; }
+                    catch (e) { if (e && e.name === 'AbortError') return; }
+                }
+                // fallback (desktop / browsers without file sharing): save the picture, then open WhatsApp with the message
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'genius-cbt-streak.png';
+                document.body.appendChild(a); a.click(); a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 4000);
+                window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+            } catch (err) {
+                console.error(err);
+                window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = 'Share on WhatsApp'; }
+            }
+        }
+
         function streakHtml() {
             if (state.history === null) return '';
             const n = studyStreak();
@@ -1639,8 +1784,8 @@
 
         async function handleLogout() {
             await signOut(auth);
-            stopMessaging(); state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
-            waAsked = false; closeWaPopup();
+            stopMessaging(); streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            waAsked = false; closeWaPopup(); streakAsked = false; closeStreakPopup();
             setView('home');
         }
 
@@ -2068,9 +2213,11 @@
                 state.leaderboard = null;
                 await loadHistory();
                 if (state.currentView === 'dashboard') render();
+                maybeShowStreakPopup();
                 await loadLeaderboard();
                 if (state.currentView === 'dashboard') render();
             }
+            maybeShowStreakPopup();
         }
 
         function publicName(n) {
@@ -3330,7 +3477,7 @@
         async function forceLogout(msg) {
             try { await signOut(auth); } catch (_) {}
             if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
-            stopMessaging(); state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            stopMessaging(); streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('login', msg);
         }
         function checkAway() {
@@ -3717,7 +3864,7 @@
         }
 
         // Expose handlers used by inline onclick/onsubmit attributes
-        Object.assign(window, { markWaJoined, closeWaPopup, shareScore, practiceSameSubjects,
+        Object.assign(window, { markWaJoined, closeWaPopup, shareStreak, closeStreakPopup, shareScore, practiceSameSubjects,
             openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
