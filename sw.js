@@ -1,7 +1,7 @@
 // Genius Tutor CBT service worker.
 // Network-first for this site's own files, so question and code updates reach students straight away.
 // The cache is only a fallback when the phone is offline. Firebase and other sites are never touched.
-const CACHE = 'genius-tutor-v1';
+const CACHE = 'genius-tutor-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 
@@ -19,7 +19,7 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })   // always check the server, so GitHub Pages' 10-minute browser cache never serves old files
       .then(res => {
         if (res && res.ok) {
           const copy = res.clone();
