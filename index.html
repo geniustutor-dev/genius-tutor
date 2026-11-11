@@ -704,6 +704,7 @@
                                         <button onclick="setView('register')" class="bg-[#f4b731] hover:bg-[#ffc844] text-[#0b3d2b] font-semibold text-sm rounded-xl px-6 py-3 transition">Create free account</button>
                                         <button onclick="setView('login')" class="border border-white/30 hover:bg-white/10 font-semibold text-sm rounded-xl px-6 py-3 transition">I already have an account</button>
                                     </div>
+                                    <p class="text-xs sm:text-sm text-white/75 mt-4">30 days free with full access${IS_PLAY_APP ? '' : '. Then ' + PASS_PRICE + ' for a full year. Practice questions come with explanations.'}</p>
                                 </div>
                                 <div class="relative">
                                     <div class="rounded-3xl overflow-hidden shadow-2xl shadow-black/30 aspect-[4/4.4] bg-[#cfe3d4]" style="background-image:url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAWABQDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwCTRo123KyS+StwU2l/l3DkcevpW59vcX8dhDHGsa4357LjPA/rXAald+feIVJKRgRKe+0DuRXR6xcNN4Usrtn/AHzMu5gPmJAb+ozSjTSu1uzOFRKNrXOmuEUyZCEg9NgAAFFYkF5OsSiQiRzyTINxBPOM0VjLDRk73OmNRpWIJNCkvHX7XcDae0YwSe3NW30CaJVWK7KiM8IeQR9eKKKuL5qfMxRioStHQT+yJ+9wmf8AdP8AjRRRWXtZ9zb2cT//2Q==);background-size:cover;background-position:center">
@@ -1190,6 +1191,22 @@
         }
 
         // --- LEADERBOARD CARD (dashboard) ---
+        function studyStreak() {
+            const all = [...(state.history || []), ...(state.practiceHistory || []), ...(state.waecHistory || [])];
+            const day = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
+            const days = new Set(all.map(x => x.startedAt && x.startedAt.toMillis ? day(x.startedAt.toMillis()) : 0).filter(Boolean));
+            if (!days.size) return 0;
+            let t = Date.now(), n = 0;
+            if (!days.has(day(t))) t -= 86400000;
+            while (days.has(day(t))) { n++; t -= 86400000; }
+            return n;
+        }
+        function streakHtml() {
+            if (state.history === null) return '';
+            const n = studyStreak();
+            const txt = n > 0 ? n + '-day streak. Practise today to keep it going.' : 'No streak yet. Practise today to start one.';
+            return `<div class="mt-4 flex items-center gap-3 bg-white border border-[#e8e2d2] rounded-2xl p-4"><span class="text-2xl">🔥</span><p class="text-sm font-medium">${txt}</p></div>`;
+        }
         function leaderboardCard() {
             const lb = state.leaderboard;
             const u = state.user;
@@ -1387,7 +1404,7 @@
                             </div>
                         </div>
 
-                        ${hasFullAccess() ? `<a href="${HELPDESK_LINK}" target="_blank" rel="noopener" class="mt-4 flex items-center gap-4 ${card} p-4 hover:border-[#25a244] transition">
+                        ${hasFullAccess() ? `<a href="${HELPDESK_LINK}" target="_blank" rel="noopener" onclick="markWaJoined()" class="mt-4 flex items-center gap-4 ${card} p-4 hover:border-[#25a244] transition">
                             <span class="w-11 h-11 shrink-0 rounded-xl bg-[#e3f6e8] text-[#25a244] flex items-center justify-center text-xl">💬</span>
                             <span class="flex-1 min-w-0">
                                 <span class="block font-display font-bold text-base">Join GENIUS CBT HELP DESK</span>
@@ -1395,6 +1412,8 @@
                             </span>
                             <span class="shrink-0 text-xs font-semibold bg-[#25a244] text-white rounded-lg px-3 py-2">Join</span>
                         </a>` : ''}
+
+                        ${streakHtml()}
 
                         ${leaderboardHtml}
 
@@ -1576,6 +1595,7 @@
         async function handleLogout() {
             await signOut(auth);
             stopMessaging(); state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            waAsked = false; closeWaPopup();
             setView('home');
         }
 
@@ -1811,6 +1831,29 @@
         }
 
         // --- RESULT ---
+        function weakestOf(r) {
+            const rows = Object.entries(r.breakdown || {}).filter(([, d]) => d.total > 0).map(([n, d]) => ({ n, d, p: d.score / d.total }));
+            return rows.length > 1 ? rows.sort((a, b) => a.p - b.p)[0] : null;
+        }
+        function weakLineHtml(r) {
+            const w = weakestOf(r);
+            if (!w) return '';
+            return `<div class="mb-4 rounded-xl border border-[#e8e2d2] bg-[#faf8f2] p-4 flex items-center justify-between gap-3">
+                <p class="text-sm leading-snug">Weakest subject: <strong class="uppercase">${esc(w.n)}</strong> (${w.d.score} / ${w.d.total}). Practise the same subjects with explanations.</p>
+                <button onclick="practiceSameSubjects()" class="shrink-0 bg-[#066c43] hover:bg-[#055a37] text-white text-xs font-semibold rounded-lg px-3 py-2">Practise</button>
+            </div>`;
+        }
+        function practiceSameSubjects() {
+            const subs = (state.examSubjects || []).filter(x => x !== 'english');
+            if (subs.length === 3) state.psetup.subjects = subs;
+            openPractice();
+        }
+        function shareScore() {
+            const r = computeResult();
+            const link = IS_PLAY_APP ? 'https://geniuscbt.com' : location.origin;
+            const msg = 'I scored ' + r.scaled + '/400 (' + r.totalScore + '/' + r.totalCount + ' correct) on a full timed JAMB CBT mock exam on Genius CBT. Can you beat me? ' + link;
+            window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank', 'noopener');
+        }
         function renderResult() {
             const r = computeResult();
             let prediction = "Needs Improvement 📚";
@@ -1854,7 +1897,9 @@
                             </div>
                             <span class="text-2xl">🎯</span>
                         </div>
+                        ${weakLineHtml(r)}
                         ${state.saveError ? `<div class="mb-4 text-xs bg-amber-500/10 border border-amber-500/30 text-amber-800 rounded-xl p-3 leading-relaxed">Your result could not be saved to your account (no connection, or the exam time had already ended). You can still review your answers below.</div>` : ''}
+                        <button onclick="shareScore()" class="w-full mb-3 bg-[#25a244] hover:bg-[#1e8a39] text-white font-semibold py-3 rounded-xl transition">📲 Share my score on WhatsApp</button>
                         <div class="flex gap-3">
                             <button onclick="startReview()" class="flex-1 bg-[#eef1ec] hover:bg-[#e1e7e0] text-[#0b3d2b] font-semibold py-3 rounded-xl transition">Review answers</button>
                             <button onclick="showDashboard()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-600/30 transition">Dashboard</button>
@@ -1973,6 +2018,7 @@
             if (resumeAttempt()) return;
             setView('dashboard');
             maybeShowPlanReminder();
+            maybeShowWaPopup();
             if (state.history === null) {
                 state.leaderboard = null;
                 await loadHistory();
@@ -2587,6 +2633,29 @@
         }
 
         // A pop-up reminder, shown once a day when 5 days or fewer are left (free trial or paid month)
+        // --- WHATSAPP GROUP POPUP: shown at every login until the student taps Join (remembered on this device) ---
+        let waAsked = false;
+        const waKey = () => 'gt_wa_joined_' + (state.user ? state.user.uid : '');
+        function markWaJoined() { try { localStorage.setItem(waKey(), '1'); } catch (_) {} closeWaPopup(); }
+        function closeWaPopup() { const b = document.getElementById('wa-popup'); if (b) b.remove(); }
+        function maybeShowWaPopup() {
+            if (waAsked || !state.user || state.isAdmin || state.currentView !== 'dashboard' || !hasFullAccess()) return;
+            try { if (localStorage.getItem(waKey())) return; } catch (_) {}
+            waAsked = true;
+            closeWaPopup();
+            const box = document.createElement('div');
+            box.id = 'wa-popup';
+            box.className = 'fixed inset-0 z-[110] bg-black/50 flex items-center justify-center p-4';
+            box.innerHTML = `<div class="bg-white text-[#0b3d2b] rounded-2xl shadow-2xl max-w-sm w-full p-6">
+                <p class="text-3xl mb-2">💬</p>
+                <h3 class="font-display font-bold text-lg">Join the Genius CBT help desk group</h3>
+                <p class="text-sm leading-relaxed mt-2 text-[#2f5546]">Get help, updates and tips from other students on WhatsApp.</p>
+                <div class="flex gap-2 mt-5">
+                    <a href="${HELPDESK_LINK}" target="_blank" rel="noopener" onclick="markWaJoined()" class="flex-1 text-center bg-[#25a244] hover:bg-[#1e8a39] text-white font-semibold text-sm rounded-xl px-4 py-3 transition">Join on WhatsApp</a>
+                    <button onclick="closeWaPopup()" class="px-4 py-3 text-sm font-semibold text-[#58796b] hover:text-[#0b3d2b]">Later</button>
+                </div></div>`;
+            document.body.appendChild(box);
+        }
         function maybeShowPlanReminder() {
             if (!state.user || state.isAdmin || state.pass === null || state.pass.error || state.currentView !== 'dashboard') return;
             let kind = '', end = 0;
@@ -3603,7 +3672,7 @@
         }
 
         // Expose handlers used by inline onclick/onsubmit attributes
-        Object.assign(window, {
+        Object.assign(window, { markWaJoined, closeWaPopup, shareScore, practiceSameSubjects,
             openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
