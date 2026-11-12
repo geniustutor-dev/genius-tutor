@@ -3579,28 +3579,43 @@
         // shown under every question in Answer review
         // ---- ASK AI (server: api/explain.js) ----
         state.aiBy = {};
+        function aiFmt(t) {
+            return esc(String(t || ''))
+                .replace(/^\s*[*-]\s+/gm, '• ')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+        }
+        function aiAnsHtml(A) {
+            if (A.loading) return '<p class="text-sm text-[#58796b]">Thinking…</p>';
+            if (A.error) return `<p class="text-sm text-rose-700">${esc(A.error)}</p>`;
+            return `<p class="text-sm text-[#0b3d2b] leading-relaxed whitespace-pre-wrap break-words">${aiFmt(A.answer)}</p>`;
+        }
         function aiInner(idx) {
             const A = state.aiBy[idx];
             if (!A) {
-                return `<button onclick="askAI(${idx})" class="mt-3 w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-[#066c43] hover:bg-[#055a37] rounded-xl py-2.5 transition">✨ Ask AI to explain</button>`;
+                return `<button type="button" onclick="askAI(${idx})" class="mt-3 w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-[#066c43] hover:bg-[#055a37] rounded-xl py-2.5 transition">✨ Ask AI to explain</button>`;
             }
-            const body = A.loading
-                ? '<p class="text-sm text-[#58796b]">Thinking…</p>'
-                : (A.error ? `<p class="text-sm text-rose-700">${esc(A.error)}</p>` : `<p class="text-sm text-[#0b3d2b] leading-relaxed whitespace-pre-wrap break-words">${esc(A.answer)}</p>`);
-            const more = A.loading ? '' : `
-                <div class="flex items-center gap-2 mt-3">
-                    <input id="ai-in-${idx}" maxlength="500" placeholder="Ask a follow-up…" class="flex-1 min-w-0 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]">
-                    <button onclick="askAI(${idx}, true)" class="shrink-0 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-2 transition">Ask</button>
-                </div>`;
             return `<div class="mt-3 border border-[#cfe5d8] rounded-xl bg-[#f4faf6] p-3">
                 <p class="text-xs font-bold text-[#0b5a3c] mb-1.5">✨ AI explanation</p>
-                ${body}${more}
+                <div id="ai-ans-${idx}">${aiAnsHtml(A)}</div>
+                <textarea id="ai-in-${idx}" rows="2" maxlength="500" placeholder="Ask a follow-up…" class="w-full mt-3 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]"></textarea>
+                <button type="button" id="ai-btn-${idx}" onclick="askAI(${idx}, true)" class="w-full mt-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl py-2.5 transition">Ask</button>
                 <p class="text-[10px] text-[#0b3d2b]/50 mt-2">AI can make mistakes. Check with your textbook or the admin if unsure.</p>
             </div>`;
         }
         function paintAI(idx) {
-            const el = document.getElementById('ai-box-' + idx);
-            if (el) el.innerHTML = aiInner(idx);
+            const box = document.getElementById('ai-box-' + idx);
+            if (!box) return;
+            const A = state.aiBy[idx];
+            const ans = document.getElementById('ai-ans-' + idx);
+            if (A && ans) {
+                // box already open: update only the answer and button, so the typing box and keyboard stay untouched
+                ans.innerHTML = aiAnsHtml(A);
+                const btn = document.getElementById('ai-btn-' + idx);
+                if (btn) { btn.disabled = !!A.loading; btn.textContent = A.loading ? 'Thinking…' : 'Ask'; }
+            } else {
+                box.innerHTML = aiInner(idx);
+            }
         }
         async function askAI(idx, followup) {
             const R = state.review, it = R && R.items[idx];
@@ -3611,6 +3626,7 @@
                 const inp = document.getElementById('ai-in-' + idx);
                 ask = ((inp ? inp.value : (A && A.draft)) || '').trim();
                 if (!ask) return;
+                if (inp) inp.value = '';
             }
             if (A && A.loading) return;
             A = state.aiBy[idx] = { loading: true, answer: (A && A.answer) || '', error: '', draft: '' };
