@@ -3589,7 +3589,7 @@
                 : (A.error ? `<p class="text-sm text-rose-700">${esc(A.error)}</p>` : `<p class="text-sm text-[#0b3d2b] leading-relaxed whitespace-pre-wrap break-words">${esc(A.answer)}</p>`);
             const more = A.loading ? '' : `
                 <div class="flex items-center gap-2 mt-3">
-                    <input id="ai-in-${idx}" maxlength="500" oninput="state.aiBy[${idx}].draft=this.value" value="${esc(A.draft || '')}" placeholder="Ask a follow-up…" class="flex-1 min-w-0 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]">
+                    <input id="ai-in-${idx}" maxlength="500" placeholder="Ask a follow-up…" class="flex-1 min-w-0 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]">
                     <button onclick="askAI(${idx}, true)" class="shrink-0 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-2 transition">Ask</button>
                 </div>`;
             return `<div class="mt-3 border border-[#cfe5d8] rounded-xl bg-[#f4faf6] p-3">
@@ -3931,7 +3931,7 @@
 
         // Expose handlers used by inline onclick/onsubmit attributes
         Object.assign(window, { markWaJoined, closeWaPopup, shareStreak, closeStreakPopup, shareScore, practiceSameSubjects,
-            openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
+            askAI, paintAI, openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
