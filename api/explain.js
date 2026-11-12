@@ -71,7 +71,12 @@ export default async function handler(req, res) {
     );
     if (r.status === 429)
       return res.status(429).json({ error: "AI is very busy today. Try again later." });
-    if (!r.ok) return res.status(502).json({ error: "AI is busy. Try again." });
+    if (!r.ok) {
+      let msg = "";
+      try { msg = (await r.json()).error?.message || ""; } catch (_) {}
+      console.error("Gemini error", r.status, msg);
+      return res.status(502).json({ error: "AI error " + r.status + ": " + msg.slice(0, 160) });
+    }
     const d = await r.json();
     const answer = d.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
     return res.status(200).json({ answer });
