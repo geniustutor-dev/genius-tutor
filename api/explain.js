@@ -45,42 +45,58 @@ export default async function handler(req, res) {
     `Existing explanation: ${String(explanation || "").slice(0, 800)}\n` +
     (ask ? `Student asks: ${ask}` : "Explain why the correct answer is right and why the student's choice is wrong.");
 
-  const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  try {
-    const r = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": process.env.GEMINI_API_KEY,
+  const models = [
+    process.env.GEMINI_MODEL || "gemini-3.8-flash",
+    "gemini-flash-lite-latest",
+    "gemini-flash-latest",
+  ].filter((m, i, a) => a.indexOf(m) === i);
+
+  const body = JSON.stringify({
+    systemInstruction: {
+      parts: [
+        {
+          text:
+            "You are a friendly tutor helping Nigerian secondary school students prepare for JAMB UTME and WAEC. Explain in simple English, step by step, in under 150 words. Stay on the question. If the stated correct answer looks wrong, say so briefly.",
         },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [
-              {
-                text:
-                  "You are a friendly tutor helping Nigerian secondary school students prepare for JAMB UTME and WAEC. Explain in simple English, step by step, in under 150 words. Stay on the question. If the stated correct answer looks wrong, say so briefly.",
-              },
-            ],
+      ],
+    },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
+  });
+
+  let lastStatus = 0;
+  let lastMsg = "";
+  for (const model of models) {
+    try {
+      const r = await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": process.env.GEMINI_API_KEY,
           },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { maxOutputTokens: 2000, temperature: 0.3 },
-        }),
+          body,
+        }
+      );
+      if (r.ok) {
+        const d = await r.json();
+        const answer = d.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+        if (answer) return res.status(200).json({ answer });
+        lastStatus = 204;
+        continue;
       }
-    );
-    if (r.status === 429)
-      return res.status(429).json({ error: "AI is very busy today. Try again later." });
-    if (!r.ok) {
-      let msg = "";
-      try { msg = (await r.json()).error?.message || ""; } catch (_) {}
-      console.error("Gemini error", r.status, msg);
-      return res.status(502).json({ error: "AI error " + r.status + ": " + msg.slice(0, 160) });
+      lastStatus = r.status;
+      try { lastMsg = (await r.json()).error?.message || ""; } catch (_) {}
+      console.error("Gemini error", model, lastStatus, lastMsg);
+      if ([404, 429, 500, 503].includes(r.status)) continue;
+      break;
+    } catch (e) {
+      lastStatus = 500;
     }
-    const d = await r.json();
-    const answer = d.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
-    return res.status(200).json({ answer });
-  } catch (e) {
-    return res.status(500).json({ error: "Something went wrong." });
   }
+
+  if (lastStatus === 429 || lastStatus === 503 || lastStatus === 500 || lastStatus === 204)
+    return res.status(503).json({ error: "AI is busy right now. Please try again in a minute." });
+  return res.status(502).json({ error: "AI error " + lastStatus + ": " + lastMsg.slice(0, 160) });
 }
