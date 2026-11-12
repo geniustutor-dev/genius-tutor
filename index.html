@@ -2323,7 +2323,7 @@
         }
 
         function startReview() {
-            state.review = { items: buildReviewItems(), tab: 'all', back: 'result', sid: state.sessionId };
+            state.aiBy = {}; state.review = { items: buildReviewItems(), tab: 'all', back: 'result', sid: state.sessionId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -2332,7 +2332,7 @@
             try {
                 const snap = await getDoc(doc(db, 'reviews', id));
                 if (!snap.exists()) { alert('The answer review for this attempt is not available.'); return; }
-                state.review = { items: snap.data().items, tab: 'all', back: 'dashboard', sid: id };
+                state.aiBy = {}; state.review = { items: snap.data().items, tab: 'all', back: 'dashboard', sid: id };
                 setView('review');
                 window.scrollTo(0, 0);
             } catch (err) { alert(friendlyError(err)); }
@@ -2736,7 +2736,7 @@
         }
 
         function startPracticeReview() {
-            state.review = { items: buildPracticeReviewItems(), tab: 'all', back: 'practiceResult', sid: state.practice && state.practice.reviewId };
+            state.aiBy = {}; state.review = { items: buildPracticeReviewItems(), tab: 'all', back: 'practiceResult', sid: state.practice && state.practice.reviewId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -3123,7 +3123,7 @@
         }
 
         function startWaecReview() {
-            state.review = { items: waecReviewItems(), tab: 'all', back: 'waecResult', sid: state.waec && state.waec.sessionId };
+            state.aiBy = {}; state.review = { items: waecReviewItems(), tab: 'all', back: 'waecResult', sid: state.waec && state.waec.sessionId };
             setView('review');
             window.scrollTo(0, 0);
         }
@@ -3577,7 +3577,70 @@
         }
 
         // shown under every question in Answer review
+        // ---- ASK AI (server: api/explain.js) ----
+        state.aiBy = {};
+        function aiInner(idx) {
+            const A = state.aiBy[idx];
+            if (!A) {
+                return `<button onclick="askAI(${idx})" class="mt-3 w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-[#066c43] hover:bg-[#055a37] rounded-xl py-2.5 transition">✨ Ask AI to explain</button>`;
+            }
+            const body = A.loading
+                ? '<p class="text-sm text-[#58796b]">Thinking…</p>'
+                : (A.error ? `<p class="text-sm text-rose-700">${esc(A.error)}</p>` : `<p class="text-sm text-[#0b3d2b] leading-relaxed whitespace-pre-wrap break-words">${esc(A.answer)}</p>`);
+            const more = A.loading ? '' : `
+                <div class="flex items-center gap-2 mt-3">
+                    <input id="ai-in-${idx}" maxlength="500" oninput="state.aiBy[${idx}].draft=this.value" value="${esc(A.draft || '')}" placeholder="Ask a follow-up…" class="flex-1 min-w-0 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]">
+                    <button onclick="askAI(${idx}, true)" class="shrink-0 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-2 transition">Ask</button>
+                </div>`;
+            return `<div class="mt-3 border border-[#cfe5d8] rounded-xl bg-[#f4faf6] p-3">
+                <p class="text-xs font-bold text-[#0b5a3c] mb-1.5">✨ AI explanation</p>
+                ${body}${more}
+                <p class="text-[10px] text-[#0b3d2b]/50 mt-2">AI can make mistakes. Check with your textbook or the admin if unsure.</p>
+            </div>`;
+        }
+        function paintAI(idx) {
+            const el = document.getElementById('ai-box-' + idx);
+            if (el) el.innerHTML = aiInner(idx);
+        }
+        async function askAI(idx, followup) {
+            const R = state.review, it = R && R.items[idx];
+            if (!it || !auth.currentUser) return;
+            let A = state.aiBy[idx];
+            let ask = '';
+            if (followup) {
+                const inp = document.getElementById('ai-in-' + idx);
+                ask = ((inp ? inp.value : (A && A.draft)) || '').trim();
+                if (!ask) return;
+            }
+            if (A && A.loading) return;
+            A = state.aiBy[idx] = { loading: true, answer: (A && A.answer) || '', error: '', draft: '' };
+            paintAI(idx);
+            try {
+                const token = await auth.currentUser.getIdToken();
+                const expl = (window.EXPLAIN && window.EXPLAIN[keyOf([it.q, it.o[it.a]])]) || '';
+                const r = await fetch('/api/explain', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        idToken: token, subject: it.s, passage: it.p || '', question: it.q, options: it.o,
+                        correct: it.o[it.a], chosen: it.c >= 0 ? it.o[it.c] : '', explanation: expl, followup: ask
+                    })
+                });
+                const d = await r.json().catch(() => ({}));
+                if (!r.ok || !d.answer) throw new Error(d.error || 'AI could not answer. Try again.');
+                A.answer = d.answer; A.error = '';
+            } catch (e) {
+                A.error = e.message || 'AI could not answer. Try again.';
+            }
+            A.loading = false;
+            paintAI(idx);
+        }
         function qChatHtml(i, idx) {
+            if (!state.user || idx < 0) return '';
+            return `<div id="ai-box-${idx}">${aiInner(idx)}</div>` + qAdminChatHtml(i, idx);
+        }
+
+        function qAdminChatHtml(i, idx) {
             if (!state.user || idx < 0) return '';
             const tid = threadIdFor(idx);
             const C = state.chat;
