@@ -93,6 +93,11 @@
         button { touch-action: manipulation; }
         @media (min-width: 1280px) { html { font-size: 17px; } }
         @media (min-width: 1700px) { html { font-size: 18px; } }
+            .mf { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; margin: 0 .15em; line-height: 1.25; }
+        .mfn { border-bottom: 1.5px solid currentColor; padding: 0 .3em .05em; }
+        .mfd { padding: .05em .3em 0; }
+        .msq { white-space: nowrap; }
+        .msr { border-top: 1.5px solid currentColor; padding: 0 .15em; }
     </style>
 
     <style>
@@ -1277,11 +1282,24 @@
         }
 
         let streakAsked = false;
-        function closeStreakPopup() { const b = document.getElementById('streak-popup'); if (b) b.remove(); }
+        // The pop-up shows once a day: only after the student has finished practice or an exam today,
+        // and not again that day once they tap Continue or Share.
+        let memStreakShown = 0;
+        function streakShownToday() {
+            const today = dayKey(Date.now()), k = 'gt_streak_shown_' + (state.user ? state.user.uid : '');
+            try { return Number(localStorage.getItem(k)) === today; } catch (_) { return memStreakShown === today; }
+        }
+        function markStreakShown() {
+            const today = dayKey(Date.now()), k = 'gt_streak_shown_' + (state.user ? state.user.uid : '');
+            memStreakShown = today;
+            try { localStorage.setItem(k, String(today)); } catch (_) {}
+        }
+        function closeStreakPopup(done) { const b = document.getElementById('streak-popup'); if (b) b.remove(); if (done) markStreakShown(); }
         function maybeShowStreakPopup() {
             if (streakAsked || !state.user || state.isAdmin || state.currentView !== 'dashboard' || state.history === null) return;
             const n = studyStreak();
             if (n < 1) return;
+            if (!streakWeek().some(d => d.today && d.done) || streakShownToday()) return;   // only after today's practice, once a day
             streakAsked = true;
             closeStreakPopup();
             const week = streakWeek();
@@ -1294,7 +1312,7 @@
             const box = document.createElement('div');
             box.id = 'streak-popup';
             box.className = 'fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4';
-            box.onclick = e => { if (e.target === box) closeStreakPopup(); };
+            box.onclick = e => { if (e.target === box) closeStreakPopup(true); };
             box.innerHTML = `<div class="w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden text-white text-center" style="background:linear-gradient(160deg,#0f7a50 0%,#0b5a3c 55%,#04150f 100%)">
                 <div class="px-6 pt-7 pb-2">
                     <div class="flex justify-center">${flameSvg(84)}</div>
@@ -1305,7 +1323,7 @@
                 </div>
                 <div class="px-6 pb-6 pt-5">
                     <button id="streak-share-btn" onclick="shareStreak()" class="w-full bg-[#25d366] hover:bg-[#1fbd5b] text-[#04150f] font-bold text-sm rounded-xl px-4 py-3.5 transition flex items-center justify-center gap-2">Share on WhatsApp</button>
-                    <button onclick="closeStreakPopup()" class="w-full mt-2 py-3 text-sm font-semibold text-white/80 hover:text-white">Continue</button>
+                    <button onclick="closeStreakPopup(true)" class="w-full mt-2 py-3 text-sm font-semibold text-white/80 hover:text-white">Continue</button>
                 </div></div>`;
             document.body.appendChild(box);
         }
@@ -1368,6 +1386,7 @@
             return new Promise((res, rej) => c.toBlob(b => b ? res(b) : rej(new Error('image failed')), 'image/png'));
         }
         async function shareStreak() {
+            markStreakShown();
             const btn = document.getElementById('streak-share-btn');
             const n = studyStreak();
             const link = 'https://geniuscbt.com';
@@ -3579,16 +3598,92 @@
         // shown under every question in Answer review
         // ---- ASK AI (server: api/explain.js) ----
         state.aiBy = {};
+        // ---- Maths display: turns the AI's LaTeX into textbook-style maths (stacked fractions, powers, roots) ----
+        const TEX_SYM = { times: '×', div: '÷', cdot: '·', pm: '±', mp: '∓', approx: '≈', le: '≤', leq: '≤', ge: '≥', geq: '≥', ne: '≠', neq: '≠',
+            pi: 'π', theta: 'θ', Delta: 'Δ', delta: 'δ', alpha: 'α', beta: 'β', gamma: 'γ', lambda: 'λ', mu: 'μ', rho: 'ρ', sigma: 'σ', omega: 'ω',
+            Omega: 'Ω', phi: 'φ', epsilon: 'ε', infty: '∞', circ: '°', degree: '°', rightarrow: '→', to: '→', leftarrow: '←', Rightarrow: '⇒',
+            therefore: '∴', because: '∵', ldots: '…', cdots: '…', dots: '…', angle: '∠', perp: '⊥', parallel: '∥', in: '∈', cup: '∪', cap: '∩',
+            quad: ' ', qquad: '  ', ',': ' ', ';': ' ', ':': ' ', '!': '', ' ': ' ', '%': '%', '$': '$', '&': '&amp;', '_': '_', '{': '{', '}': '}', '\\': '<br>' };
+        const TEX_PLAIN = ['sin', 'cos', 'tan', 'cot', 'sec', 'csc', 'log', 'ln', 'lim', 'max', 'min'];
+        function texToHtml(src) {
+            let i = 0;
+            const esc1 = c => c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '&' ? '&amp;' : c;
+            function skipSpace() { while (i < src.length && src[i] === ' ') i++; }
+            function parseArg() {                       // one {group}, one command or one character
+                skipSpace();
+                if (i >= src.length) return '';
+                if (src[i] === '{') { i++; const h = parseSeq(true); if (src[i] === '}') i++; return h; }
+                if (src[i] === '\\') return parseCommand();
+                return esc1(src[i++]);
+            }
+            function parseCommand() {
+                i++;                                    // the backslash
+                let name = '';
+                if (/[A-Za-z]/.test(src[i] || '')) { while (i < src.length && /[A-Za-z]/.test(src[i])) name += src[i++]; }
+                else { name = src[i] || ''; i++; }
+                if (name === 'frac' || name === 'dfrac' || name === 'tfrac') {
+                    const n = parseArg(), d = parseArg();
+                    return `<span class="mf"><span class="mfn">${n}</span><span class="mfd">${d}</span></span>`;
+                }
+                if (name === 'sqrt') {
+                    skipSpace();
+                    let idx = '';
+                    if (src[i] === '[') { const e = src.indexOf(']', i); if (e > 0) { idx = src.slice(i + 1, e); i = e + 1; } }
+                    const r = parseArg();
+                    return (idx ? `<sup>${esc1(idx)}</sup>` : '') + `<span class="msq">√<span class="msr">${r}</span></span>`;
+                }
+                if (name === 'text' || name === 'mathrm' || name === 'textit' || name === 'mathit' || name === 'operatorname') return parseArg();
+                if (name === 'mathbf' || name === 'textbf' || name === 'boldsymbol') return `<strong>${parseArg()}</strong>`;
+                if (name === 'overline' || name === 'bar') return `<span class="msr">${parseArg()}</span>`;
+                if (name === 'vec') return `<span>${parseArg()}</span>⃗`;
+                if (name === 'left' || name === 'right' || name === 'displaystyle' || name === 'limits') { skipSpace(); if (name === 'left' || name === 'right') { if (src[i] === '.') i++; } return ''; }
+                if (Object.prototype.hasOwnProperty.call(TEX_SYM, name)) return TEX_SYM[name];
+                if (TEX_PLAIN.includes(name)) return name;
+                return esc1(name);                      // unknown command: show its name, never break
+            }
+            function parseSeq(inGroup) {
+                let out = '';
+                while (i < src.length) {
+                    const c = src[i];
+                    if (c === '}') { if (inGroup) return out; i++; continue; }
+                    if (c === '{') { i++; out += parseSeq(true); if (src[i] === '}') i++; continue; }
+                    if (c === '\\') { out += parseCommand(); continue; }
+                    if (c === '^') { i++; out += `<sup>${parseArg()}</sup>`; continue; }
+                    if (c === '_') { i++; out += `<sub>${parseArg()}</sub>`; continue; }
+                    out += esc1(c); i++;
+                }
+                return out;
+            }
+            return parseSeq(false);
+        }
+        // fallback for stray LaTeX written outside $ signs
+        function aiClean(t) {
+            return String(t || '')
+                .replace(/\\times/g, '×').replace(/\\div/g, '÷').replace(/\\cdot/g, '·').replace(/\\approx/g, '≈')
+                .replace(/\\leq?/g, '≤').replace(/\\geq?/g, '≥').replace(/\\pm/g, '±').replace(/\\%/g, '%');
+        }
         function aiFmt(t) {
-            return esc(String(t || ''))
+            const maths = [];
+            const hold = (tex, block) => { maths.push(`<span class="${block ? 'block text-center my-1' : ''}">${texToHtml(tex.trim())}</span>`); return '\uE000' + (maths.length - 1) + '\uE001'; };
+            let x = String(t || '')
+                .replace(/\$\$([\s\S]+?)\$\$/g, (m, g) => hold(g, true))
+                .replace(/\\\[([\s\S]+?)\\\]/g, (m, g) => hold(g, true))
+                .replace(/\\\(([\s\S]+?)\\\)/g, (m, g) => hold(g, false))
+                .replace(/\$([^$\n]+?)\$/g, (m, g) => hold(g, false));
+            x = esc(aiClean(x))
                 .replace(/^\s*[*-]\s+/gm, '• ')
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                 .replace(/(^|[\s(])\*([^*\n]+?)\*(?=[\s).,;:!?]|$)/g, '$1<em>$2</em>');
+            return x.replace(/\uE000(\d+)\uE001/g, (m, n) => maths[Number(n)] || '');
         }
         function aiAnsHtml(A) {
-            if (A.loading) return '<p class="text-sm text-[#58796b]">Thinking…</p>';
-            if (A.error) return `<p class="text-sm text-rose-700">${esc(A.error)}</p>`;
-            return `<p class="text-sm text-[#0b3d2b] leading-relaxed whitespace-pre-wrap break-words">${aiFmt(A.answer)}</p>`;
+            const bub = (m) => m.r === 'u'
+                ? `<div class="flex justify-end mb-2"><div class="max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed bg-[#066c43] text-white whitespace-pre-wrap break-words">${esc(m.t)}</div></div>`
+                : `<div class="flex justify-start mb-2"><div class="max-w-[95%] rounded-2xl px-3 py-2 text-sm leading-relaxed bg-white border border-[#cfe5d8] text-[#0b3d2b] whitespace-pre-wrap break-words">${aiFmt(m.t)}</div></div>`;
+            let h = (A.msgs || []).map(bub).join('');
+            if (A.loading && !A.streaming) h += '<p class="text-sm text-[#58796b] mb-1">Thinking…</p>';
+            if (A.error) h += `<p class="text-sm text-rose-700 mb-1">${esc(A.error)}</p>`;
+            return h;
         }
         function aiInner(idx) {
             const A = state.aiBy[idx];
@@ -3596,10 +3691,10 @@
                 return `<button type="button" onclick="askAI(${idx})" class="mt-3 w-full flex items-center justify-center gap-2 text-sm font-semibold text-white bg-[#066c43] hover:bg-[#055a37] rounded-xl py-2.5 transition">✨ Ask AI to explain</button>`;
             }
             return `<div class="mt-3 border border-[#cfe5d8] rounded-xl bg-[#f4faf6] p-3">
-                <p class="text-xs font-bold text-[#0b5a3c] mb-1.5">✨ AI explanation</p>
-                <div id="ai-ans-${idx}">${aiAnsHtml(A)}</div>
-                <textarea id="ai-in-${idx}" rows="2" maxlength="500" placeholder="Ask a follow-up…" class="w-full mt-3 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]"></textarea>
-                <button type="button" id="ai-btn-${idx}" onclick="askAI(${idx}, true)" class="w-full mt-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl py-2.5 transition">Ask</button>
+                <p class="text-xs font-bold text-[#0b5a3c] mb-2">✨ Chat with AI about this question</p>
+                <div id="ai-ans-${idx}" class="max-h-96 overflow-y-auto">${aiAnsHtml(A)}</div>
+                <textarea id="ai-in-${idx}" rows="2" maxlength="500" placeholder="Type your next question…" class="w-full mt-2 bg-white border border-[#d9d4c3] rounded-lg px-3 py-2 text-sm text-[#0b3d2b] focus:outline-none focus:border-[#0b5a3c]"></textarea>
+                <button type="button" id="ai-btn-${idx}" onclick="askAI(${idx}, true)" class="w-full mt-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl py-2.5 transition">Send</button>
                 <p class="text-[10px] text-[#0b3d2b]/50 mt-2">AI can make mistakes. Check with your textbook or the admin if unsure.</p>
             </div>`;
         }
@@ -3609,10 +3704,11 @@
             const A = state.aiBy[idx];
             const ans = document.getElementById('ai-ans-' + idx);
             if (A && ans) {
-                // box already open: update only the answer and button, so the typing box and keyboard stay untouched
+                // chat already open: update only the messages and button, so the typing box and keyboard stay untouched
                 ans.innerHTML = aiAnsHtml(A);
+                ans.scrollTop = ans.scrollHeight;
                 const btn = document.getElementById('ai-btn-' + idx);
-                if (btn) { btn.disabled = !!A.loading; btn.textContent = A.loading ? 'Thinking…' : 'Ask'; }
+                if (btn) { btn.disabled = !!A.loading; btn.textContent = A.loading ? 'Thinking…' : 'Send'; }
             } else {
                 box.innerHTML = aiInner(idx);
             }
@@ -3621,15 +3717,18 @@
             const R = state.review, it = R && R.items[idx];
             if (!it || !auth.currentUser) return;
             let A = state.aiBy[idx];
+            if (A && A.loading) return;
             let ask = '';
+            const inp = document.getElementById('ai-in-' + idx);
             if (followup) {
-                const inp = document.getElementById('ai-in-' + idx);
-                ask = ((inp ? inp.value : (A && A.draft)) || '').trim();
+                ask = ((inp ? inp.value : '') || '').trim();
                 if (!ask) return;
                 if (inp) inp.value = '';
             }
-            if (A && A.loading) return;
-            A = state.aiBy[idx] = { loading: true, answer: (A && A.answer) || '', error: '', draft: '' };
+            if (!A) A = state.aiBy[idx] = { loading: false, msgs: [], error: '' };
+            const history = A.msgs.map(m => ({ role: m.r === 'u' ? 'user' : 'model', text: m.t })).slice(-12);
+            if (ask) A.msgs.push({ r: 'u', t: ask });
+            A.loading = true; A.error = '';
             paintAI(idx);
             try {
                 const token = await auth.currentUser.getIdToken();
@@ -3639,15 +3738,37 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         idToken: token, subject: it.s, passage: it.p || '', question: it.q, options: it.o,
-                        correct: it.o[it.a], chosen: it.c >= 0 ? it.o[it.c] : '', explanation: expl, followup: ask
+                        correct: it.o[it.a], chosen: it.c >= 0 ? it.o[it.c] : '', explanation: expl,
+                        followup: ask, history
                     })
                 });
-                const d = await r.json().catch(() => ({}));
-                if (!r.ok || !d.answer) throw new Error(d.error || 'AI could not answer. Try again.');
-                A.answer = d.answer; A.error = '';
+                const ct = r.headers.get('content-type') || '';
+                if (r.ok && ct.includes('text/plain') && r.body && r.body.getReader) {
+                    // the answer arrives in pieces: show it as it comes
+                    const msg = { r: 'm', t: '' };
+                    A.msgs.push(msg); A.streaming = true;
+                    const reader = r.body.getReader(), dec = new TextDecoder();
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        msg.t += dec.decode(value, { stream: true });
+                        paintAI(idx);
+                    }
+                    msg.t += dec.decode();
+                    if (!msg.t.trim()) { A.msgs.pop(); throw new Error('AI could not answer. Try again.'); }
+                } else {
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok || !d.answer) throw new Error(d.error || 'AI could not answer. Try again.');
+                    A.msgs.push({ r: 'm', t: d.answer });
+                }
             } catch (e) {
                 A.error = e.message || 'AI could not answer. Try again.';
+                const lastM = A.msgs[A.msgs.length - 1];
+                if (lastM && lastM.r === 'm' && !lastM.t.trim()) A.msgs.pop();
+                const tail = A.msgs[A.msgs.length - 1];
+                if (ask && tail && tail.r === 'u') { A.msgs.pop(); if (inp && !inp.value) inp.value = ask; }   // give the student their question back
             }
+            A.streaming = false;
             A.loading = false;
             paintAI(idx);
         }
