@@ -134,6 +134,8 @@
     <script src="digital.js"></script>
     <script src="financialaccounting.js"></script>
     <script src="islamicstudies.js"></script>
+    <script src="commerce.js"></script>
+    <script src="literature.js"></script>
     <script src="explanations.js"></script>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
@@ -193,6 +195,8 @@
             return bank;
         }
         // --- SUBJECT LIST (id, label). Ids of existing subjects are kept so saved data still works. ---
+        // Subjects follow the new NERDC senior secondary list. Subjects without a question bank yet get placeholder
+        // questions and a "Coming soon" tag until real questions are added (see REAL_BANKS / WAEC_BANKS below).
         const SUBJECT_DEFS = [
             ['mathematics', 'General Mathematics'],
             ['citizenship', 'Citizenship and Heritage Studies'],
@@ -202,14 +206,27 @@
             ['physics', 'Physics'],
             ['agriculture', 'Agriculture'],
             ['furthermaths', 'Further Mathematics'],
+            ['foods', 'Foods and Nutrition'],
+            ['geography', 'Geography'],
+            ['techdrawing', 'Technical Drawing'],
+            ['nigerianhistory', 'Nigerian History'],
             ['government', 'Government'],
+            ['crs', 'Christian Religious Studies'],
             ['irs', 'Islamic Religious Studies'],
+            ['visualarts', 'Visual Arts'],
             ['literature', 'Literature in English'],
+            ['catering', 'Catering Craft'],
             ['accounting', 'Financial Accounting'],
             ['commerce', 'Commerce'],
             ['marketing', 'Marketing'],
             ['economics', 'Economics'],
-            ['livestock', 'Livestock Farming']
+            // Trade subjects (a student chooses one)
+            ['solar', 'Solar Photovoltaic Installation and Maintenance'],
+            ['fashion', 'Fashion Design and Garment Making'],
+            ['livestock', 'Livestock Farming'],
+            ['beauty', 'Beauty and Cosmetology'],
+            ['hardware', 'Computer Hardware and GSM Repairs'],
+            ['horticulture', 'Horticulture and Crop Production']
         ];
         const SUBJECT_LABELS = Object.fromEntries([['english', 'English Language'], ...SUBJECT_DEFS]);
         const questionBank = { english: generateSubjectBank("English Language", 125) };
@@ -225,7 +242,9 @@
             citizenship: window.CITIZENSHIP,
             digital: window.DIGITAL,
             accounting: window.FINANCIAL_ACCOUNTING,
-            irs: window.ISLAMIC_STUDIES
+            irs: window.ISLAMIC_STUDIES,
+            commerce: window.COMMERCE_WAEC,
+            literature: window.LITERATURE_WAEC
         };
 
         // WAEC/NECO/GCE question banks (kept apart from the JAMB banks above). Same row format.
@@ -235,7 +254,9 @@
             economics: window.ECONOMICS_WAEC,
             government: window.GOVERNMENT_WAEC,
             accounting: window.FINANCIAL_ACCOUNTING,
-            irs: window.ISLAMIC_STUDIES
+            irs: window.ISLAMIC_STUDIES,
+            commerce: window.COMMERCE_WAEC,
+            literature: window.LITERATURE_WAEC
         };
 
         // --- ENGLISH EXAM BUILDER (uses questions.js) ---
@@ -1328,6 +1349,13 @@
             document.body.appendChild(box);
         }
 
+        // the student's name for the streak flyer: full registered name (max 3 words), neatly capitalised
+        function streakName() {
+            let raw = ((state.user && state.user.name) || '').trim();
+            try { if (!raw && auth.currentUser) raw = (auth.currentUser.displayName || (auth.currentUser.email || '').split('@')[0] || '').trim(); } catch (_) {}
+            const words = raw.replace(/[._]+/g, ' ').split(/\s+/).filter(Boolean).slice(0, 3);
+            return words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        }
         function loadImg(src) { return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
         async function makeStreakImage(n) {
             const W = 1080, H = 1350;
@@ -1361,13 +1389,17 @@
             // number + label
             g.fillStyle = '#f4b731'; g.font = '800 300px ' + F; g.fillText(String(n), W / 2, 820);
             g.fillStyle = '#fff'; g.font = '800 84px ' + F; g.fillText(n === 1 ? 'day streak' : 'day streak', W / 2, 910);
-            const first = ((state.user && state.user.name) || '').trim().split(/\s+/)[0] || '';
-            if (first) {
-                const nm = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
-                g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = '600 40px ' + F; g.fillText(nm + ' is practising every day!', W / 2, 980);
+            const full = streakName();
+            if (full) {
+                // big name, shrunk to fit the picture
+                let size = 76;
+                g.font = '800 ' + size + 'px ' + F;
+                while (g.measureText(full.toUpperCase()).width > W - 160 && size > 36) { size -= 2; g.font = '800 ' + size + 'px ' + F; }
+                g.fillStyle = '#ffffff'; g.fillText(full.toUpperCase(), W / 2, 1000);
+                g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = '600 36px ' + F; g.fillText('is practising every day!', W / 2, 1048);
             }
             // week row
-            const week = streakWeek(), gap = 120, x0 = W / 2 - gap * 3, y = 1090;
+            const week = streakWeek(), gap = 120, x0 = W / 2 - gap * 3, y = 1160;
             week.forEach((d, i) => {
                 const x = x0 + i * gap;
                 g.fillStyle = d.today ? '#f4b731' : 'rgba(255,255,255,0.65)'; g.font = '700 28px ' + F; g.fillText(d.label, x, y - 50);
@@ -1390,7 +1422,8 @@
             const btn = document.getElementById('streak-share-btn');
             const n = studyStreak();
             const link = 'https://geniuscbt.com';
-            const text = '🔥 I am on a ' + n + '-day streak on Genius CBT! Practise JAMB, WAEC & NECO with me: ' + link;
+            const who = streakName();
+            const text = '🔥 ' + (who ? who + ' is' : 'I am') + ' on a ' + n + '-day streak on Genius CBT! Practise JAMB, WAEC & NECO with me: ' + link;
             if (btn) { btn.disabled = true; btn.textContent = 'Preparing picture…'; }
             try {
                 const blob = await makeStreakImage(n);
@@ -1436,7 +1469,7 @@
                         ${badge(x.rank)}
                         <div class="min-w-0 flex-1">
                             <p class="text-sm font-semibold truncate">${esc(x.r.name || 'Student')}${me ? ' <span class="text-[11px] font-semibold text-[#0b5a3c]">(you)</span>' : ''}</p>
-                            <p class="text-[11px] text-[#0b3d2b]/55">Completed a full exam</p>
+                            <p class="text-[11px] text-[#0b3d2b]/55">Completed a full JAMB exam</p>
                         </div>
                     </div>`;
                 };
@@ -1464,13 +1497,13 @@
             }
             let footer = '';
             if (lb && !lb.error) {
-                footer = lb.myBest === null ? 'Sit a full exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400` + (lb.mode === 'names' ? (lb._myRank ? ' · Your position: ' + lb._myRank : ' · Your position will show after the next ranking update') + ' · Scores are private' : '');
+                footer = lb.myBest === null ? 'Sit a full JAMB exam to get on the leaderboard.' : `Your best: ${lb.myBest} / 400` + (lb.mode === 'names' ? (lb._myRank ? ' · Your position: ' + lb._myRank : ' · Your position will show after the next ranking update') + ' · Scores are private' : '');
             }
             return `
                 <div class="flex items-center justify-between mt-10 mb-3">
                     <div>
                         <h2 class="font-display font-bold text-xl">🏆 Leaderboard</h2>
-                        <p class="text-xs text-[#0b3d2b]/55">${state.isAdmin ? 'Admin view: top 10 · best full-exam score out of 400' : 'Students who have completed a full exam'}</p>
+                        <p class="text-xs text-[#0b3d2b]/55">${state.isAdmin ? 'Admin view: top 10 · best full JAMB exam score out of 400' : 'JAMB students who have completed a full exam'}</p>
                     </div>
                     <button onclick="refreshLeaderboard()" class="text-xs font-semibold text-[#0b5a3c] hover:underline">↻ Refresh</button>
                 </div>
@@ -1506,19 +1539,30 @@
                     ${stat('Practice sessions', ph.length, ph.length && pTotal ? Math.round(pRight / pTotal * 100) + '% correct on average' : '')}
                 </div>`;
 
+                // progress per subject: every attempt counts (full JAMB exams, practice sessions and WAEC/NECO/GCE papers)
                 const subj = {};
-                h.forEach(x => Object.entries(x.breakdown || {}).forEach(([k, v]) => {
-                    const o = subj[k] = subj[k] || { c: 0, t: 0, best: 0 };
-                    o.c += v.score; o.t += v.total;
-                    if (v.total) o.best = Math.max(o.best, Math.round(v.score / v.total * 100));
-                }));
-                subjectHtml = Object.keys(subj).length ? `
+                const addAttempt = (k, score, total, when) => {
+                    if (!k || !total) return;
+                    const o = subj[k] = subj[k] || { c: 0, t: 0, best: 0, n: 0, last: 0 };
+                    o.c += score; o.t += total; o.n++;
+                    o.best = Math.max(o.best, Math.round(score / total * 100));
+                    o.last = Math.max(o.last, when);
+                };
+                h.forEach(x => Object.entries(x.breakdown || {}).forEach(([k, v]) => addAttempt(k, v.score, v.total, ts(x))));
+                ph.forEach(x => {
+                    const bd = x.breakdown && Object.keys(x.breakdown).length ? x.breakdown : null;
+                    if (bd) Object.entries(bd).forEach(([k, v]) => addAttempt(k, v.score, v.total, ts(x)));
+                    else if (x.subjects && x.subjects.length === 1) addAttempt(x.subjects[0], x.rawScore || 0, x.totalQuestions || 0, ts(x));
+                });
+                (state.waecHistory || []).forEach(x => addAttempt((x.subjects || [])[0], x.rawScore || 0, x.totalQuestions || 0, ts(x)));
+                const subjRows = Object.entries(subj).sort((a, b) => b[1].last - a[1].last);
+                subjectHtml = subjRows.length ? `
                     <h2 class="font-display font-bold text-xl mt-10 mb-3">Progress by subject</h2>
                     <div class="${card} p-5 space-y-4">
-                        ${Object.entries(subj).map(([k, v]) => {
+                        ${subjRows.map(([k, v]) => {
                             const pct = v.t ? Math.round(v.c / v.t * 100) : 0;
                             return `<div>
-                                <div class="flex justify-between text-sm"><span class="font-medium">${esc(subjLabel(k))}</span><span class="text-[#0b3d2b]/60 text-xs">avg ${pct}% · best ${v.best}%</span></div>
+                                <div class="flex justify-between gap-3 text-sm"><span class="font-medium">${esc(subjLabel(k))}</span><span class="text-[#0b3d2b]/60 text-xs text-right">avg ${pct}% · best ${v.best}% · ${v.n} ${v.n === 1 ? 'attempt' : 'attempts'}</span></div>
                                 <div class="h-2 bg-[#e8f0ea] rounded-full mt-1.5"><div class="h-2 bg-[#066c43] rounded-full" style="width:${pct}%"></div></div>
                             </div>`;
                         }).join('')}
@@ -3516,7 +3560,7 @@
         setInterval(() => { if (document.visibilityState === 'visible') touchActive(); }, 15000);
 
         // --- QUESTION CHAT: students message the admin about a question in Answer review ---
-        // threads/{uid_sessionId_questionIndex}  (+ messages subcollection). Admin gets a live badge, toast, beep and
+        // threads/{uid_sessionId_questionIndex}  (+ messages subcollection). Admin gets a live badge, toast and
         // (if allowed) a browser notification while the app is open. WhatsApp is the fallback.
         let msgUnsubs = [];
         let adminFirstSnap = true;
@@ -3552,17 +3596,6 @@
             el.onclick = () => { el.remove(); if (onClick) onClick(); };
             box.appendChild(el);
             setTimeout(() => el.remove(), 9000);
-        }
-
-        function beep() {
-            try {
-                const C = window.AudioContext || window.webkitAudioContext;
-                const ctx = new C(), o = ctx.createOscillator(), g = ctx.createGain();
-                o.connect(g); g.connect(ctx.destination);
-                o.frequency.value = 880; g.gain.value = 0.08;
-                o.start(); o.stop(ctx.currentTime + 0.18);
-                setTimeout(() => { try { ctx.close(); } catch (_) {} }, 400);
-            } catch (_) {}
         }
 
         function fmtChatTime(ts) {
@@ -4006,7 +4039,6 @@
 
         function notifyAdmin(t, id) {
             showToast('💬 ' + (t.studentName || 'Student') + ': ' + (t.lastMessage || 'New question'), () => openThreadFromToast(id));
-            beep();
             try {
                 if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
                     new Notification('New student question', { body: (t.studentName || 'Student') + ': ' + (t.lastMessage || '') });
@@ -4036,7 +4068,7 @@
                         if (adminFirstSnap) {
                             adminFirstSnap = false;
                             const n = state.inbox.threads.filter(t => t.unreadAdmin).length;
-                            if (n) { showToast('💬 You have ' + n + ' unread student message' + (n > 1 ? 's' : ''), () => openAdmin()); beep(); }
+                            if (n) { showToast('💬 You have ' + n + ' unread student message' + (n > 1 ? 's' : ''), () => openAdmin()); }
                         } else {
                             snap.docChanges().forEach(c => {
                                 if (c.type === 'removed' || c.doc.metadata.hasPendingWrites) return;
@@ -4060,7 +4092,7 @@
                             if (state.chat && state.chat.tid === c.doc.id) { updateDoc(doc(db, 'threads', c.doc.id), { unreadStudent: false }).catch(() => {}); return; }
                             fresh.push(t);
                         });
-                        if (fresh.length) { showToast('💬 The admin replied to your question. Open Answer review to read it.'); beep(); }
+                        if (fresh.length) { showToast('💬 The admin replied to your question. Open Answer review to read it.'); }
                     }, err => console.error('my threads listen', err)));
                 }
             } catch (e) { console.error(e); }
