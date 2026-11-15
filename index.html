@@ -1168,7 +1168,7 @@
             state.pass = null;
             render();
             await loadPass();
-            if (state.currentView === 'dashboard') render();
+            if (state.currentView === 'dashboard') { render(); maybeShowPaidCongrats(); }
         }
 
         function fmtDate(ms) { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
@@ -1310,12 +1310,14 @@
         let memStreakShown = 0;
         function streakShownToday() {
             const today = dayKey(Date.now()), k = 'gt_streak_shown_' + (state.user ? state.user.uid : '');
+            if (state.user && state.user.prefs && Number(state.user.prefs.streakShown) === today) return true;
             try { return Number(localStorage.getItem(k)) === today; } catch (_) { return memStreakShown === today; }
         }
         function markStreakShown() {
             const today = dayKey(Date.now()), k = 'gt_streak_shown_' + (state.user ? state.user.uid : '');
             memStreakShown = today;
             try { localStorage.setItem(k, String(today)); } catch (_) {}
+            savePref('streakShown', today);
         }
         function closeStreakPopup(done) { const b = document.getElementById('streak-popup'); if (b) b.remove(); if (done) markStreakShown(); }
         function maybeShowStreakPopup() {
@@ -1832,6 +1834,8 @@
                 await attempt(() => deleteDoc(doc(db, 'leaderboard', uid)));
                 await attempt(() => deleteDoc(doc(db, 'leaderboard_public', uid)));
                 await attempt(async () => { const k = await nameKey(name); if (k) await deleteDoc(doc(db, 'nameKeys', k)); });
+                await attempt(() => deleteDoc(doc(db, 'progress', uid)));
+                await attempt(() => deleteDoc(doc(db, 'seen', uid)));
                 await attempt(() => deleteDoc(doc(db, 'users', uid)));
                 // 3. delete the login itself, last
                 await deleteUser(user);
@@ -1852,8 +1856,8 @@
 
         async function handleLogout() {
             await signOut(auth);
-            stopMessaging(); streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
-            waAsked = false; closeWaPopup(); streakAsked = false; closeStreakPopup();
+            stopMessaging(); cloudPulledUid = ''; seenPulledUid = ''; streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            waAsked = false; closeWaPopup(); cloudPulledUid = ''; seenPulledUid = ''; seenPulledUid = ''; streakAsked = false; closeStreakPopup(); closePaidCongrats();
             setView('home');
         }
 
@@ -2178,8 +2182,45 @@
                 return snap;
             } catch (_) { return null; }
         }
-        function clearProgress() { try { if (state.user) localStorage.removeItem(resumeKey(state.user.uid)); } catch (_) {} }
-        function saveProgress() {
+        function clearProgress() {
+            try {
+                if (!state.user) return;
+                localStorage.removeItem(resumeKey(state.user.uid));
+                // leave a "finished" marker in the cloud so other devices do not reopen an attempt that is already over
+                cloudSig = '';
+                setDoc(doc(db, 'progress', state.user.uid), { cleared: true, savedAt: Date.now() }).catch(() => {});
+            } catch (_) {}
+        }
+        // --- cloud copy of the unfinished attempt: the student can carry on from any phone or browser ---
+        let cloudPushAt = 0, cloudSig = '', cloudPulledUid = '';
+        const CLOUD_SKIP_KEYS = new Set(['timeLeft', 'deadline', 'savedAt', 'timerRef']);
+        async function pushCloudProgress(snap, force) {
+            try {
+                if (!state.user || state.isAdmin || !snap) return;
+                const sig = JSON.stringify(snap, (k, v) => CLOUD_SKIP_KEYS.has(k) ? undefined : v);
+                if (!force && (sig === cloudSig || Date.now() - cloudPushAt < 60000)) return;
+                const str = JSON.stringify(snap);
+                if (str.length > 900000) return;
+                cloudPushAt = Date.now(); cloudSig = sig;
+                await setDoc(doc(db, 'progress', state.user.uid), { snap: str, savedAt: snap.savedAt });
+            } catch (e) { console.error('cloud progress', e); }
+        }
+        // called once after sign-in: bring the newest unfinished attempt from the cloud onto this device
+        async function pullCloudProgress() {
+            try {
+                const u = state.user;
+                if (!u || state.isAdmin || cloudPulledUid === u.uid) return;
+                cloudPulledUid = u.uid;
+                const cs = await getDoc(doc(db, 'progress', u.uid));
+                if (!cs.exists()) return;
+                const d = cs.data();
+                let local = null; try { local = JSON.parse(localStorage.getItem(resumeKey(u.uid)) || 'null'); } catch (_) {}
+                const localAt = local && local.savedAt ? local.savedAt : 0;
+                if (d.cleared) { if ((d.savedAt || 0) >= localAt) localStorage.removeItem(resumeKey(u.uid)); return; }
+                if (d.snap && (d.savedAt || 0) > localAt) localStorage.setItem(resumeKey(u.uid), d.snap);
+            } catch (e) { console.error('pull progress', e); }
+        }
+        function saveProgress(force) {
             try {
                 if (!state.user) return;
                 const v = state.currentView;
@@ -2196,6 +2237,7 @@
                 if (!snap) return;
                 snap.savedAt = Date.now();
                 localStorage.setItem(resumeKey(state.user.uid), JSON.stringify(snap));
+                pushCloudProgress(snap, force === true);
             } catch (e) { console.error('Could not save progress', e); }
         }
         // returns true when an attempt was reopened
@@ -2221,9 +2263,9 @@
             window.scrollTo(0, 0);
             return true;
         }
-        setInterval(saveProgress, 10000);
-        window.addEventListener('pagehide', saveProgress);
-        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveProgress(); });
+        setInterval(() => saveProgress(), 10000);
+        window.addEventListener('pagehide', () => saveProgress(true));
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') saveProgress(true); });
 
 // --- EXPLANATIONS (explanations.js: window.EXPLAIN maps a question fingerprint to a short explanation) ---
         function explainHtml(i) {
@@ -2273,10 +2315,12 @@
             if (!state.user) { setView('dashboard'); return; }
             if (state.pass === null) { setView('loading'); await loadPass(); }
             if (isLockedOut()) { setView('locked'); window.scrollTo(0, 0); return; }
+            await Promise.all([pullCloudProgress(), pullSeenCloud()]);
             if (resumeAttempt()) return;
             setView('dashboard');
             maybeShowPlanReminder();
             maybeShowWaPopup();
+            maybeShowPaidCongrats();
             if (state.history === null) {
                 state.leaderboard = null;
                 await loadHistory();
@@ -2478,7 +2522,41 @@
         // --- JAMB PRACTICE BUILDER: fixed size, topics in equal shares, no repeats until the bank is used up ---
         const JAMB_PRACTICE = { english: 20, novel: 3, other: 10 };   // 20 English (3 from the novel), 10 from each other subject
         function seenStore() { try { return JSON.parse(localStorage.getItem('gt_seen_' + state.user.uid) || '{}'); } catch (_) { return {}; } }
-        function saveSeen(o) { try { localStorage.setItem('gt_seen_' + state.user.uid, JSON.stringify(o)); } catch (_) {} }
+        let seenTimer = null, seenPulledUid = '';
+        function saveSeen(o) {
+            try { localStorage.setItem('gt_seen_' + state.user.uid, JSON.stringify(o)); } catch (_) {}
+            if (seenTimer) clearTimeout(seenTimer);
+            seenTimer = setTimeout(pushSeenCloud, 20000);   // one cloud write shortly after the student stops answering
+        }
+        async function pushSeenCloud() {
+            seenTimer = null;
+            try {
+                if (!state.user || state.isAdmin) return;
+                const str = JSON.stringify(seenStore());
+                if (str.length > 900000) return;
+                await setDoc(doc(db, 'seen', state.user.uid), { data: str, updatedAt: Date.now() });
+            } catch (e) { console.error('seen sync', e); }
+        }
+        // once after sign-in: merge the questions practised on other devices with this device
+        async function pullSeenCloud() {
+            try {
+                const u = state.user;
+                if (!u || state.isAdmin || seenPulledUid === u.uid) return;
+                seenPulledUid = u.uid;
+                const cs = await getDoc(doc(db, 'seen', u.uid));
+                const local = seenStore();
+                let cloud = {};
+                if (cs.exists()) { try { cloud = JSON.parse(cs.data().data || '{}'); } catch (_) {} }
+                let gotNew = false, localExtra = false;
+                Object.entries(cloud).forEach(([b, arr]) => {
+                    const cur = local[b] = local[b] || [], have = new Set(cur);
+                    (arr || []).forEach(k => { if (!have.has(k)) { cur.push(k); gotNew = true; } });
+                });
+                Object.entries(local).forEach(([b, arr]) => { const c = new Set(cloud[b] || []); if ((arr || []).some(k => !c.has(k))) localExtra = true; });
+                if (gotNew) { try { localStorage.setItem('gt_seen_' + u.uid, JSON.stringify(local)); } catch (_) {} }
+                if (localExtra || !cs.exists() && Object.keys(local).length) pushSeenCloud();
+            } catch (e) { console.error('seen pull', e); }
+        }
         function markSeen(bucket, key) {
             const o = seenStore(), a = o[bucket] = o[bucket] || [];
             if (!a.includes(key)) { a.push(key); saveSeen(o); }
@@ -2892,14 +2970,46 @@
             return `<div class="${amber}">⏰ <strong>Your 1-month free trial has ended.</strong> Activate the 1-year plan${priceParen()} to keep practising and to unlock the JAMB exam and WAEC/NECO/GCE papers.<br>${btn('Activate 1-year plan' + priceParen())}</div>`;
         }
 
+        // --- PAID PASS CONGRATULATIONS: shown once per paid pass (and again after a renewal), on the first dashboard visit ---
+        function closePaidCongrats() { const b = document.getElementById('paid-congrats'); if (b) b.remove(); }
+        function maybeShowPaidCongrats() {
+            if (!state.user || state.isAdmin || !state.pass || state.pass.error || !hasActivePass() || state.currentView !== 'dashboard') return;
+            const key = 'gt_paid_congrats_' + state.user.uid + '_' + state.pass.expiresMs;
+            const expStr = String(state.pass.expiresMs);
+            if (state.user.prefs && state.user.prefs.paidCongrats === expStr) return;
+            try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) {}
+            savePref('paidCongrats', expStr);
+            closePaidCongrats();
+            const box = document.createElement('div');
+            box.id = 'paid-congrats';
+            box.className = 'fixed inset-0 z-[120] bg-black/50 flex items-center justify-center p-4';
+            box.innerHTML = `<div class="bg-white text-[#0b3d2b] rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
+                <p class="text-5xl mb-2">🎉</p>
+                <h3 class="font-display font-bold text-xl">Congratulations!</h3>
+                <p class="text-sm leading-relaxed mt-2 text-[#2f5546]">Your 1-year pass is active until <strong>${esc(fmtDate(state.pass.expiresMs))}</strong>. You now have full access to the JAMB mock exams, the WAEC/NECO/GCE papers and unlimited practice. Thank you for choosing Genius CBT.</p>
+                <div class="flex gap-2 mt-5">
+                    <button onclick="closePaidCongrats(); openPractice()" class="flex-1 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-3 transition">Start practising</button>
+                    <button onclick="closePaidCongrats()" class="px-4 py-3 text-sm font-semibold text-[#58796b] hover:text-[#0b3d2b]">Close</button>
+                </div></div>`;
+            document.body.appendChild(box);
+        }
         // A pop-up reminder, shown once a day when 5 days or fewer are left (free trial or paid month)
         // --- WHATSAPP GROUP POPUP: shown at every login until the student taps Join (remembered on this device) ---
         let waAsked = false;
         const waKey = () => 'gt_wa_joined_' + (state.user ? state.user.uid : '');
-        function markWaJoined() { try { localStorage.setItem(waKey(), '1'); } catch (_) {} closeWaPopup(); }
+        // saved on the student's account so they are not asked again on another device
+        function savePref(k, v) {
+            try {
+                if (!state.user) return;
+                state.user.prefs = { ...(state.user.prefs || {}), [k]: v };
+                updateDoc(doc(db, 'users', state.user.uid), { ['prefs.' + k]: v }).catch(() => {});
+            } catch (_) {}
+        }
+        function markWaJoined() { try { localStorage.setItem(waKey(), '1'); } catch (_) {} savePref('waJoined', true); closeWaPopup(); }
         function closeWaPopup() { const b = document.getElementById('wa-popup'); if (b) b.remove(); }
         function maybeShowWaPopup() {
             if (waAsked || !state.user || state.isAdmin || state.currentView !== 'dashboard' || !hasFullAccess()) return;
+            if (state.user.prefs && state.user.prefs.waJoined) return;
             try { if (localStorage.getItem(waKey())) return; } catch (_) {}
             waAsked = true;
             closeWaPopup();
@@ -2924,7 +3034,10 @@
             const d = daysLeft(end);
             if (d <= 0 || d > REMIND_DAYS) return;
             const key = 'gt_remind_' + state.user.uid + '_' + kind + '_' + new Date().toISOString().slice(0, 10);
+            const remindMark = kind + '|' + new Date().toISOString().slice(0, 10);
+            if (state.user.prefs && state.user.prefs.planRemind === remindMark) return;
             try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (_) {}
+            savePref('planRemind', remindMark);
             closePlanReminder();
             const box = document.createElement('div');
             box.id = 'plan-reminder';
@@ -3545,7 +3658,7 @@
         async function forceLogout(msg) {
             try { await signOut(auth); } catch (_) {}
             if (practiceInterval) { clearInterval(practiceInterval); practiceInterval = null; }
-            stopMessaging(); streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
+            stopMessaging(); cloudPulledUid = ''; seenPulledUid = ''; streakAsked = false; state.user = null; state.isAdmin = false; state.history = null; state.leaderboard = null; state.pass = null;
             setView('login', msg);
         }
         function checkAway() {
@@ -4101,7 +4214,7 @@
         }
 
         // Expose handlers used by inline onclick/onsubmit attributes
-        Object.assign(window, { markWaJoined, closeWaPopup, shareStreak, closeStreakPopup, shareScore, practiceSameSubjects,
+        Object.assign(window, { closePaidCongrats, markWaJoined, closeWaPopup, shareStreak, closeStreakPopup, shareScore, practiceSameSubjects,
             askAI, paintAI, openQChat, closeQChat, sendQChat, setChatDraft, openAdminThread, closeAdminThread, sendAdminReply, askNotifPermission,
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
