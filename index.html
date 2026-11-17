@@ -997,6 +997,10 @@
                                     <input type="text" id="regFullName" required autocomplete="name" class="${inputCls}">
                                 </div>
                                 <div>
+                                    <label for="regSchool" class="block text-xs font-medium mb-1.5">Name of school</label>
+                                    <input type="text" id="regSchool" required minlength="3" maxlength="100" placeholder="e.g. Government College, Ibadan" autocomplete="organization" class="${inputCls}">
+                                </div>
+                                <div>
                                     <label for="regEmailInput" class="block text-xs font-medium mb-1.5">Email address</label>
                                     <input type="email" id="regEmailInput" required autocomplete="email" class="${inputCls}">
                                 </div>
@@ -1021,8 +1025,10 @@
         async function handleRegister(e) {
             e.preventDefault();
             const name = document.getElementById('regFullName').value.trim();
+            const school = document.getElementById('regSchool').value.trim().replace(/\s+/g, ' ');
             const email = document.getElementById('regEmailInput').value.trim();
             const password = document.getElementById('regPassword').value;
+            if (school.length < 3) { alert('Please enter the name of your school.'); return; }
             if (password !== document.getElementById('regPassword2').value) { alert('The two passwords do not match. Please type them again.'); return; }
 
             const btn = document.getElementById('submit-btn');
@@ -1036,7 +1042,7 @@
             try {
                 const cred = await createUserWithEmailAndPassword(auth, email, password);
                 await setDoc(doc(db, 'users', cred.user.uid), {
-                    name, email,
+                    name, school, email,
                     subjects: ['english'],
                     createdAt: serverTimestamp()
                 });
