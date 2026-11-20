@@ -1285,7 +1285,56 @@
         const dayKey = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + d.getMonth() * 100 + d.getDate(); };
         function studyDaySet() {
             const all = [...(state.history || []), ...(state.practiceHistory || []), ...(state.waecHistory || [])];
-            return new Set(all.map(x => x.startedAt && x.startedAt.toMillis ? dayKey(x.startedAt.toMillis()) : 0).filter(Boolean));
+            const set = new Set(all.map(x => x.startedAt && x.startedAt.toMillis ? dayKey(x.startedAt.toMillis()) : 0).filter(Boolean));
+            restoredDaySet().forEach(k => set.add(k));
+            return set;
+        }
+        // --- STREAK RESTORE: a student can restore missed days, up to 3 days in a calendar month ---
+        const MAX_RESTORES = 3;
+        const monthKey = ms => { const d = new Date(ms); return d.getFullYear() * 100 + d.getMonth(); };
+        function restoredDaySet() {
+            const a = state.user && state.user.prefs && state.user.prefs.restoredDays;
+            return new Set(Array.isArray(a) ? a : []);
+        }
+        function restoresLeft() {
+            const p = (state.user && state.user.prefs) || {};
+            const used = p.restoreMonth === monthKey(Date.now()) ? Number(p.restoreUsed || 0) : 0;
+            return Math.max(0, MAX_RESTORES - used);
+        }
+        // returns details when a streak of 2+ days has just ended because of missed day(s), otherwise null
+        function streakBreak() {
+            if (!state.user || state.isAdmin || state.history === null) return null;
+            const days = studyDaySet(), DAY = 86400000, now = Date.now();
+            if (days.has(dayKey(now)) || days.has(dayKey(now - DAY))) return null;   // streak is still alive
+            const missed = []; let t = now - DAY;
+            while (!days.has(dayKey(t)) && missed.length < 5) { missed.push(dayKey(t)); t -= DAY; }
+            if (missed.length >= 5) return null;                                       // too long ago
+            let prev = 0, u = t;
+            while (days.has(dayKey(u))) { prev++; u -= DAY; }
+            if (prev < 2) return null;                                                 // no real streak to restore
+            const left = restoresLeft();
+            return { missed: missed.reverse(), prev, left, canRestore: missed.length <= left };
+        }
+        async function restoreStreak() {
+            const b = streakBreak();
+            if (!b || !b.canRestore) return;
+            const cost = b.missed.length;
+            if (!confirm('Restore your ' + b.prev + '-day streak? This uses ' + cost + ' of your ' + b.left + ' restore' + (b.left === 1 ? '' : 's') + ' left this month.')) return;
+            const p = state.user.prefs || {};
+            const cur = monthKey(Date.now());
+            const used = (p.restoreMonth === cur ? Number(p.restoreUsed || 0) : 0) + cost;
+            const days = Array.from(new Set([...(Array.isArray(p.restoredDays) ? p.restoredDays : []), ...b.missed]));
+            const before = p;
+            state.user.prefs = { ...p, restoredDays: days, restoreMonth: cur, restoreUsed: used };
+            try {
+                await updateDoc(doc(db, 'users', state.user.uid), { 'prefs.restoredDays': days, 'prefs.restoreMonth': cur, 'prefs.restoreUsed': used });
+                showToast('🔥 Streak restored! Practise today to keep it going.');
+            } catch (e) {
+                console.error('restore streak', e);
+                state.user.prefs = before;
+                alert('Could not restore your streak right now. Please check your internet and try again.');
+            }
+            render();
         }
         // Monday to Sunday of this week: { label, done, today, future }
         function streakWeek() {
@@ -1459,8 +1508,20 @@
         function streakHtml() {
             if (state.history === null) return '';
             const n = studyStreak();
+            const b = streakBreak();
+            const left = restoresLeft();
             const txt = n > 0 ? n + '-day streak. Practise today to keep it going.' : 'No streak yet. Practise today to start one.';
-            return `<div class="mt-4 flex items-center gap-3 bg-white border border-[#e8e2d2] rounded-2xl p-4"><span class="text-2xl">🔥</span><p class="text-sm font-medium">${txt}</p></div>`;
+            let restore = '';
+            if (b && b.canRestore) {
+                restore = `<div class="mt-3 pt-3 border-t border-[#efe9d9]">
+                        <p class="text-sm">Your <strong>${b.prev}-day streak</strong> ended because you missed ${b.missed.length === 1 ? 'yesterday' : b.missed.length + ' days'}. Restore it and carry on!</p>
+                        <button onclick="restoreStreak()" class="mt-2 bg-[#066c43] hover:bg-[#055a37] text-white font-semibold text-sm rounded-xl px-4 py-2.5 transition">Restore my streak</button>
+                    </div>`;
+            } else if (b) {
+                restore = `<div class="mt-3 pt-3 border-t border-[#efe9d9]"><p class="text-sm text-[#0b3d2b]/75">Your ${b.prev}-day streak ended. You missed ${b.missed.length} day${b.missed.length === 1 ? '' : 's'} but have only ${left} restore${left === 1 ? '' : 's'} left this month, so it cannot be restored. Start a new one today!</p></div>`;
+            }
+            const foot = (n > 0 || b) ? `<p class="mt-2 text-[11px] text-[#0b3d2b]/55">Streak restores left this month: ${left} of ${MAX_RESTORES}</p>` : '';
+            return `<div class="mt-4 bg-white border border-[#e8e2d2] rounded-2xl p-4"><div class="flex items-center gap-3"><span class="text-2xl">🔥</span><p class="text-sm font-medium">${txt}</p></div>${restore}${foot}</div>`;
         }
         function leaderboardCard() {
             const lb = state.leaderboard;
@@ -4225,7 +4286,7 @@
             setView, handleLogin, handleReset, handleRegister, handleLogout, togglePw, openDeleteAccount, closeDeleteAccount, confirmDeleteAccount, startExamSession,
             switchSubject, selectOption, toggleFlag, nextQuestion, prevQuestion, jumpTo,
             confirmSubmit, openAdmin, showDashboard, startReview, reviewPast, closeReview, setReviewTab,
-            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceGoSubject, openSettings, closeSettings, shareApp, rateApp, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
+            goToLogin, handleNewPassword, refreshPass, goPay, closePlanReminder, copyAcct, setAdminFilter, grantPass, removePass, openPractice, openWaecPractice, setWpCount, pickWpSubject, startWaecPractice, openExamSetup, openWaecSetup, pickWaecSubject, startWaec, waecSelect, waecFlag, waecNext, waecPrev, waecJump, waecConfirmSubmit, waecQuit, startWaecReview, togglePick, refreshLeaderboard, setPCount, startPractice, practiceAnswer, practiceNext, practicePrev, practiceFlag, practiceJump, practiceGoSubject, restoreStreak, openSettings, closeSettings, shareApp, rateApp, practiceFinishNow, resumeAttempt, quitPractice, startPracticeReview
         });
 
         // Opened from an email link? (?mode=verifyEmail&oobCode=... or ?mode=resetPassword&oobCode=...)
