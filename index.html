@@ -127,6 +127,7 @@
     <script src="chemistry.js"></script>
     <script src="chemistrywaec.js"></script>
     <script src="economicswaec.js"></script>
+    <script src="englishwaec.js"></script>
     <script src="economics.js"></script>
     <script src="government.js"></script>
     <script src="physics.js"></script>
@@ -288,6 +289,34 @@
             const pq = Math.min(2, Object.keys(E.passages || {}).length) * 5;
             const available = pq + (noNovel ? 0 : Math.min(5, (E.novel || []).length)) + (E.general || []).length;
             return Math.min(60, available);
+        }
+        // ---- WAEC/NECO/GCE English: its own bank (englishwaec.js), tagged by topic in the 6th item of every row ----
+        const WAEC_ENGLISH_PAPER = [['Antonyms', 5], ['Best completion', 20], ['Nearest in meaning', 5], ['Interpretation', 5], ['Vowel sounds', 5], ['Consonant sounds', 5]];
+        const WAEC_ENGLISH_ORALS = ['Rhymes', 'Word stress', 'Different stress', 'Emphatic stress', 'Phonetic symbols'];   // 15 questions mixed from these
+        function hasWaecEnglishBank() { return Array.isArray(window.ENGLISH_WAEC) && window.ENGLISH_WAEC.length >= 20; }
+        function waecEnglishSize() { return hasWaecEnglishBank() ? Math.min(60, window.ENGLISH_WAEC.length) : englishExamSize(true); }
+        function buildWaecEnglishExam() {
+            if (!hasWaecEnglishBank()) return buildEnglishExam(true);
+            const bank = window.ENGLISH_WAEC, rowsOf = t => shuffleArr(bank.filter(r => r[5] === t));
+            const picked = new Set(), part1 = [];
+            // 50 lexis, structure and oral questions in fixed numbers per topic
+            WAEC_ENGLISH_PAPER.forEach(([t, n]) => rowsOf(t).slice(0, n).forEach(r => { picked.add(r); part1.push(r); }));
+            // 15 mixed: 3 from each of rhymes, stress, different stress, emphatic stress, phonetic symbols, then shuffled together
+            let mixed = [];
+            WAEC_ENGLISH_ORALS.forEach(t => rowsOf(t).slice(0, 3).forEach(r => { picked.add(r); mixed.push(r); }));
+            if (mixed.length < 15) {   // a topic is short: top up from the other oral topics
+                const extra = shuffleArr(bank.filter(r => WAEC_ENGLISH_ORALS.includes(r[5]) && !picked.has(r)));
+                extra.slice(0, 15 - mixed.length).forEach(r => { picked.add(r); mixed.push(r); });
+            }
+            const rows = [...part1, ...shuffleArr(mixed)];
+            if (rows.length < 60) {   // any section short: fill from the rest of the bank
+                shuffleArr(bank.filter(r => !picked.has(r))).slice(0, 60 - rows.length).forEach(r => rows.push(r));
+            }
+            return rows.map(r => toItem(r));
+        }
+        function buildWaecEnglishPractice(n) {   // practice: every topic shuffled together
+            if (!hasWaecEnglishBank()) return buildPracticeEnglish(n, true);
+            return shuffleArr(window.ENGLISH_WAEC).slice(0, n).map(r => toItem(r));
         }
         function buildEnglishExam(noNovel) {   // noNovel = true for WAEC/NECO/GCE: the JAMB novel is JAMB-only
             const E = window.ENGLISH;
@@ -2577,6 +2606,7 @@
 
 // --- PRACTICE MODE ---
         function availableFor(sub, noNovel) {
+            if (sub === 'english' && noNovel && hasWaecEnglishBank()) return window.ENGLISH_WAEC.length;   // WAEC/NECO/GCE English has its own bank
             if (sub === 'english' && window.ENGLISH) {
                 const E = window.ENGLISH;
                 return (E.general || []).length + (noNovel ? 0 : (E.novel || []).length) + Object.keys(E.passages || {}).length * 5;
@@ -3173,7 +3203,7 @@
             if (!hasPracticeAccess()) { alert('Your 1-month free trial has ended. Get the 1-year plan to continue.'); showDashboard(); return; }
             const ws = state.wpsetup;
             const sub = ws.subject;
-            const raw = sub === 'english' ? buildPracticeEnglish(WAEC_PRACTICE_QS, true) : getWaecQuestions(sub, WAEC_PRACTICE_QS);
+            const raw = sub === 'english' ? buildWaecEnglishPractice(WAEC_PRACTICE_QS) : getWaecQuestions(sub, WAEC_PRACTICE_QS);
             const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = items.length * WAEC_PRACTICE_SECS_PER_Q;
@@ -3224,7 +3254,7 @@
         function renderWaecSetup() {
             const sel = state.wsetup.subject;
             const subs = ['english', ...OTHER_SUBJECTS];
-            const n = sel === 'english' ? englishExamSize(true) : Math.min(WAEC_QS, availableFor(sel, true));
+            const n = sel === 'english' ? waecEnglishSize() : Math.min(WAEC_QS, availableFor(sel, true));
             const mins = Math.max(1, Math.round(n * (WAEC_MINUTES / WAEC_QS)));
             const btn = sub => {
                 const on = sel === sub;
@@ -3258,7 +3288,7 @@
         async function startWaec() {
             if (!hasWaecAccess()) { alert('Your free trial has ended. Get the 1-year plan to use WAEC/NECO/GCE mode.'); showDashboard(); return; }
             const sub = state.wsetup.subject;
-            const raw = sub === 'english' ? buildEnglishExam(true) : getWaecQuestions(sub, WAEC_QS);
+            const raw = sub === 'english' ? buildWaecEnglishExam() : getWaecQuestions(sub, WAEC_QS);
             const items = raw.filter(q => !q.novel).map(q => ({ ...q, subject: sub }));
             if (!items.length) { alert('No questions are available for this subject yet.'); return; }
             const secs = Math.round(items.length * (WAEC_MINUTES * 60 / WAEC_QS));
