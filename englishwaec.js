@@ -3,10 +3,12 @@
 // Topics: Antonyms, Best completion (includes grammar), Nearest in meaning, Interpretation,
 //         Vowel sounds, Consonant sounds, Rhymes, Word stress, Different stress, Emphatic stress, Phonetic symbols.
 (function () {
-  const A = (q, c, x, y, z) => [q, c, x, y, z, "Antonyms"];
-  const B = (q, c, x, y, z) => [q, c, x, y, z, "Best completion"];
-  const N = (q, c, x, y, z) => [q, c, x, y, z, "Nearest in meaning"];
-  const I = (q, c, x, y, z) => [q, c, x, y, z, "Interpretation"];
+  // put the key word or phrase in CAPITALS (the printed paper underlines it)
+  const mark = (q, w) => { if (!w) return q; const i = q.toLowerCase().indexOf(w.toLowerCase()); return i < 0 ? q : q.slice(0, i) + q.slice(i, i + w.length).toUpperCase() + q.slice(i + w.length); };
+  const A = (q, w, c, x, y, z) => ["Choose the option nearly opposite in meaning to the word in capitals (the option fills the gap): " + mark(q, w), c, x, y, z, "Antonyms"];
+  const B = (q, c, x, y, z) => ["Choose the option that best completes the sentence: " + q, c, x, y, z, "Best completion"];
+  const N = (q, w, c, x, y, z) => ["Choose the option nearest in meaning to the word in capitals: " + mark(q, w), c, x, y, z, "Nearest in meaning"];
+  const I = (q, w, c, x, y, z) => [(w ? "Choose the option that best gives the meaning of the part in capitals: " : "Choose the option that best gives the meaning of the sentence: ") + mark(q, w), c, x, y, z, "Interpretation"];
   const V = (w, s, c, x, y, z) => ["Choose the word that has the same vowel sound as the /" + s + "/ in “" + w + "”", c, x, y, z, "Vowel sounds"];
   const K = (w, s, c, x, y, z) => ["Choose the word that has the same consonant sound as the /" + s + "/ in “" + w + "”", c, x, y, z, "Consonant sounds"];
   const R = (w, c, x, y, z) => ["Choose the word that rhymes with “" + w + "”", c, x, y, z, "Rhymes"];
@@ -18,15 +20,15 @@
   window.ENGLISH_WAEC = [
 
   // ===== 2025 · ANTONYMS =====
-  A("The hope with which he assumed office contrasts with the ______ with which he is leaving", "despair", "disgust", "distress", "distrust"),
-  A("The lies she told will merely exacerbate the situation rather than ______ it", "improve", "aid", "reduce", "appease"),
-  A("You should not say things that will enrage the children rather than ______ them", "pacify", "honour", "silence", "celebrate"),
-  A("The doctor does not think the patient will recover, the signs are ominous rather than ______", "encouraging", "feasible", "obvious", "gloomy"),
-  A("School prefects are expected to be honourable in all their conduct, not ______", "devious", "wicked", "stupid", "dirty"),
-  A("We had expected the change of colour during the experiment to be ______ but it was imperceptible", "obvious", "relevant", "baseless", "critical"),
-  A("We need to teach children to be ______ not insolent", "respectful", "hardworking", "generous", "courageous"),
-  A("I prefer the hustle of the city life to ______ of the village", "tranquility", "hustle", "atmosphere", "surrounding"),
-  A("The soldiers had to take a split decision whether to advance or ______", "retreat", "converge", "abort", "surrender"),
+  A("The hope with which he assumed office contrasts with the ______ with which he is leaving", "hope", "despair", "disgust", "distress", "distrust"),
+  A("The lies she told will merely exacerbate the situation rather than ______ it", "exacerbate", "improve", "aid", "reduce", "appease"),
+  A("You should not say things that will enrage the children rather than ______ them", "enrage", "pacify", "honour", "silence", "celebrate"),
+  A("The doctor does not think the patient will recover, the signs are ominous rather than ______", "ominous", "encouraging", "feasible", "obvious", "gloomy"),
+  A("School prefects are expected to be honourable in all their conduct, not ______", "honourable", "devious", "wicked", "stupid", "dirty"),
+  A("We had expected the change of colour during the experiment to be ______ but it was imperceptible", "imperceptible", "obvious", "relevant", "baseless", "critical"),
+  A("We need to teach children to be ______ not insolent", "insolent", "respectful", "hardworking", "generous", "courageous"),
+  A("I prefer the hustle of the city life to ______ of the village", "hustle", "tranquility", "hustle", "atmosphere", "surrounding"),
+  A("The soldiers had to take a split decision whether to advance or ______", "advance", "retreat", "converge", "abort", "surrender"),
 
   // ===== 2025 · BEST COMPLETION (lexis) =====
   B("The teacher reached the ______ of his career before he retired", "peak", "top", "end", "ultimate"),
@@ -41,26 +43,26 @@
   B("Mountainous regions are prone to volcanic ______", "eruptions", "discharge", "release", "emissions"),
 
   // ===== 2025 · INTERPRETATION =====
-  I("As a school prefect, I must be whiter than white. This means I must be", "honest", "bright", "eloquent", "attractive"),
-  I("My mother advised my father not to let the grass grow under his feet. This means he should", "act without delay", "not allow others to progress", "not be lazy", "face challenges"),
-  I("“Had he confessed much earlier, she would have trusted him.” This means he", "hadn't confessed earlier and he wasn't trusted", "had confessed earlier, but he wasn't trusted", "had confessed earlier and he was trusted", "hadn't confessed earlier and he was trusted"),
-  I("Investing in the business is a long shot. This means investing", "has very little chance of success", "requires huge capital", "will be profitable", "will take long time to yield profit"),
-  I("To get to school early, we woke up at the crack of dawn. This means we woke up", "very early in the morning", "at sunrise", "when the light was put on", "in the morning light"),
-  I("Recent demonstrations have put the rector in the hot seat. This means the rector", "is in a position to make a difficult decision", "is about to be removed", "wants to voluntarily quit", "has been attacked in the demonstration"),
-  I("The manager is on the ball; he has improved sales. This means the manager is", "competent and efficient", "friendly and lively", "smart and neat", "energetic and sporty"),
-  I("The company was granted a stay of execution. This means the action against the company should be", "suspended", "executed", "prioritized", "disregarded"),
+  I("As a school prefect, I must be whiter than white. This means I must be", "whiter than white", "honest", "bright", "eloquent", "attractive"),
+  I("My mother advised my father not to let the grass grow under his feet. This means he should", "let the grass grow under his feet", "act without delay", "not allow others to progress", "not be lazy", "face challenges"),
+  I("“Had he confessed much earlier, she would have trusted him.” This means he", null, "hadn't confessed earlier and he wasn't trusted", "had confessed earlier, but he wasn't trusted", "had confessed earlier and he was trusted", "hadn't confessed earlier and he was trusted"),
+  I("Investing in the business is a long shot. This means investing", "long shot", "has very little chance of success", "requires huge capital", "will be profitable", "will take long time to yield profit"),
+  I("To get to school early, we woke up at the crack of dawn. This means we woke up", "crack of dawn", "very early in the morning", "at sunrise", "when the light was put on", "in the morning light"),
+  I("Recent demonstrations have put the rector in the hot seat. This means the rector", "hot seat", "is in a position to make a difficult decision", "is about to be removed", "wants to voluntarily quit", "has been attacked in the demonstration"),
+  I("The manager is on the ball; he has improved sales. This means the manager is", "on the ball", "competent and efficient", "friendly and lively", "smart and neat", "energetic and sporty"),
+  I("The company was granted a stay of execution. This means the action against the company should be", "stay of execution", "suspended", "executed", "prioritized", "disregarded"),
 
   // ===== 2025 · NEAREST IN MEANING =====
-  N("Improvement in technology has extended the frontiers of knowledge", "borders", "bounds", "partitions", "precincts"),
-  N("This type of music is inappropriate for such a solemn ceremony", "unsuitable", "unfashionable", "indecent", "insufficient"),
-  N("Solitude is not good for the aged, it makes them lonely", "seclusion", "independence", "privacy", "grief"),
-  N("The recalcitrant was not appointed prefect, much to his chagrin", "unruly", "dishonest", "wicked", "unrepentant"),
-  N("The professor's explanation was incisive", "clear", "dull", "brief", "apt"),
-  N("People often describe his father as jocular", "hilarious", "caring", "kind", "happy"),
-  N("The electorate misconstrued the intention of the candidate", "misinterpreted", "misplaced", "misapplied", "misdirected"),
-  N("Most of his suggestions were absurd", "ridiculous", "unexpected", "evocative", "expressive"),
-  N("Ann's behaviour has been weird recently", "strange", "wicked", "lousy", "dangerous"),
-  N("The headmaster advised his pupils to exhibit some amount of decorum", "decency", "gentility", "intellect", "smartness"),
+  N("Improvement in technology has extended the frontiers of knowledge", "frontiers", "borders", "bounds", "partitions", "precincts"),
+  N("This type of music is inappropriate for such a solemn ceremony", "inappropriate", "unsuitable", "unfashionable", "indecent", "insufficient"),
+  N("Solitude is not good for the aged, it makes them lonely", "solitude", "seclusion", "independence", "privacy", "grief"),
+  N("The recalcitrant was not appointed prefect, much to his chagrin", "recalcitrant", "unruly", "dishonest", "wicked", "unrepentant"),
+  N("The professor's explanation was incisive", "incisive", "clear", "dull", "brief", "apt"),
+  N("People often describe his father as jocular", "jocular", "hilarious", "caring", "kind", "happy"),
+  N("The electorate misconstrued the intention of the candidate", "misconstrued", "misinterpreted", "misplaced", "misapplied", "misdirected"),
+  N("Most of his suggestions were absurd", "absurd", "ridiculous", "unexpected", "evocative", "expressive"),
+  N("Ann's behaviour has been weird recently", "weird", "strange", "wicked", "lousy", "dangerous"),
+  N("The headmaster advised his pupils to exhibit some amount of decorum", "decorum", "decency", "gentility", "intellect", "smartness"),
 
   // ===== 2025 · BEST COMPLETION (grammar) =====
   B("______ football, I also play basketball", "Besides", "Except", "Except for", "Beside"),
@@ -147,15 +149,15 @@
   P("s", "purse", "hose", "rose", "pause"),
 
   // ===== 2024 · ANTONYMS =====
-  A("Abdul's contribution was seen as invaluable but the chairman said it was ______", "useless", "insincere", "impossible", "preposterous"),
-  A("The boy may be culpable but his brother is surely ______", "innocent", "ignorant", "accountable", "honest"),
-  A("Our teacher used to be rigid but he is now ______ of other people's views", "tolerant", "wary", "critical", "apprise"),
-  A("Some workers were quite affable but their leader was rather ______", "antagonistic", "guarded", "caution", "suspicious"),
-  A("The driver believed he would be castigated but he was ______", "commended", "encouraged", "exonerated", "released"),
-  A("Some people are generous towards strangers, while others are ______ towards them", "mean", "indifferent", "sympathetic", "nasty"),
-  A("The baby who had long been calm suddenly became ______", "restless", "hungry", "angry", "cheerful"),
-  A("While Ade is ______, his wife is quite self-effacing", "conceited", "aggressive", "lousy", "unfriendly"),
-  A("Bakary is a prudent husband while Musa is ______", "extravagant", "mean", "thoughtful", "mindless"),
+  A("Abdul's contribution was seen as invaluable but the chairman said it was ______", "invaluable", "useless", "insincere", "impossible", "preposterous"),
+  A("The boy may be culpable but his brother is surely ______", "culpable", "innocent", "ignorant", "accountable", "honest"),
+  A("Our teacher used to be rigid but he is now ______ of other people's views", "rigid", "tolerant", "wary", "critical", "apprise"),
+  A("Some workers were quite affable but their leader was rather ______", "affable", "antagonistic", "guarded", "caution", "suspicious"),
+  A("The driver believed he would be castigated but he was ______", "castigated", "commended", "encouraged", "exonerated", "released"),
+  A("Some people are generous towards strangers, while others are ______ towards them", "generous", "mean", "indifferent", "sympathetic", "nasty"),
+  A("The baby who had long been calm suddenly became ______", "calm", "restless", "hungry", "angry", "cheerful"),
+  A("While Ade is ______, his wife is quite self-effacing", "self-effacing", "conceited", "aggressive", "lousy", "unfriendly"),
+  A("Bakary is a prudent husband while Musa is ______", "prudent", "extravagant", "mean", "thoughtful", "mindless"),
 
   // ===== 2024 · BEST COMPLETION (lexis) =====
   B("The incumbent chairman won the election by a ______ of twenty votes", "margin", "surplus", "consensus", "space"),
@@ -170,27 +172,27 @@
   B("We have not yet heard the weather ______", "forecast", "broadcast", "prediction", "announcement"),
 
   // ===== 2024 · INTERPRETATION =====
-  I("Ojo was cautioned not to jangle the old man's nerves. This means Ojo was cautioned not to", "annoy the old man", "harass the old man", "disturb the old man", "tease the old man"),
-  I("Amina was completely swept off her feet the first time she met Gabriel. This means she", "fell deeply in love", "was pleasantly surprised", "trusted him completely", "became utterly confused"),
-  I("His response showed that he kept abreast of events. This means he was", "well-informed", "mindful", "involved", "curious about events"),
-  I("Our school is the last but one on that road. This means our school is", "the one before the last", "the very last building", "one of the last buildings", "the one after the last"),
-  I("The new shopping plaza is easy on the eye. This means the plaza is", "attractive", "grandiose", "cool", "expensive"),
-  I("A good friend is supposed to be with you through thick and thin. This means a good friend should", "stand by you in good and bad times", "be prepared for any eventuality", "accompany you anywhere", "always advise you"),
-  I("Willy has been under the weather for some days. This means Willy has been", "ill", "sad", "in the rain", "outside the country"),
-  I("Taya was beaten at his own game. This means", "Taya's methods were used to defeat him", "Taya's strategies were leaked", "Taya missed the target", "Taya forgot his own tactics"),
-  I("We never believed that Father would pull through that fever. This means we did not believe he would", "recover", "acquire immunity", "die", "suffer so long"),
+  I("Ojo was cautioned not to jangle the old man's nerves. This means Ojo was cautioned not to", "jangle the old man's nerves", "annoy the old man", "harass the old man", "disturb the old man", "tease the old man"),
+  I("Amina was completely swept off her feet the first time she met Gabriel. This means she", "swept off her feet", "fell deeply in love", "was pleasantly surprised", "trusted him completely", "became utterly confused"),
+  I("His response showed that he kept abreast of events. This means he was", "kept abreast of events", "well-informed", "mindful", "involved", "curious about events"),
+  I("Our school is the last but one on that road. This means our school is", "last but one", "the one before the last", "the very last building", "one of the last buildings", "the one after the last"),
+  I("The new shopping plaza is easy on the eye. This means the plaza is", "easy on the eye", "attractive", "grandiose", "cool", "expensive"),
+  I("A good friend is supposed to be with you through thick and thin. This means a good friend should", "through thick and thin", "stand by you in good and bad times", "be prepared for any eventuality", "accompany you anywhere", "always advise you"),
+  I("Willy has been under the weather for some days. This means Willy has been", "under the weather", "ill", "sad", "in the rain", "outside the country"),
+  I("Taya was beaten at his own game. This means", "beaten at his own game", "Taya's methods were used to defeat him", "Taya's strategies were leaked", "Taya missed the target", "Taya forgot his own tactics"),
+  I("We never believed that Father would pull through that fever. This means we did not believe he would", "pull through", "recover", "acquire immunity", "die", "suffer so long"),
 
   // ===== 2024 · NEAREST IN MEANING =====
-  N("It was apparent that John damaged the desk", "evident", "noticed", "recognized", "acknowledged"),
-  N("Some of the merchant's goods were impounded", "confiscated", "intercepted", "delayed", "screened"),
-  N("My trust in Abah suddenly began to wane", "decrease", "dissipate", "disappear", "deteriorate"),
-  N("Some believe it is ominous for the owl to perch on the roof", "portentous", "forbidden", "prophetic", "suspicious"),
-  N("The new shopping mall is on the fringe of the town", "edge", "limit", "outside", "middle"),
-  N("The supervisor spurned the offer of help", "rebuffed", "denied", "defied", "refuted"),
-  N("I have eventually found the book", "finally", "actually", "lately", "presently"),
-  N("It is not good for a child to be unduly inquisitive", "curious", "naughty", "playful", "troublesome"),
-  N("Kofi is rather audacious; he jumps off high fences", "daring", "smart", "active", "agile"),
-  N("The criminal approached the crowd menacingly", "threateningly", "stealthily", "cunningly", "calculatedly"),
+  N("It was apparent that John damaged the desk", "apparent", "evident", "noticed", "recognized", "acknowledged"),
+  N("Some of the merchant's goods were impounded", "impounded", "confiscated", "intercepted", "delayed", "screened"),
+  N("My trust in Abah suddenly began to wane", "wane", "decrease", "dissipate", "disappear", "deteriorate"),
+  N("Some believe it is ominous for the owl to perch on the roof", "ominous", "portentous", "forbidden", "prophetic", "suspicious"),
+  N("The new shopping mall is on the fringe of the town", "fringe", "edge", "limit", "outside", "middle"),
+  N("The supervisor spurned the offer of help", "spurned", "rebuffed", "denied", "defied", "refuted"),
+  N("I have eventually found the book", "eventually", "finally", "actually", "lately", "presently"),
+  N("It is not good for a child to be unduly inquisitive", "inquisitive", "curious", "naughty", "playful", "troublesome"),
+  N("Kofi is rather audacious; he jumps off high fences", "audacious", "daring", "smart", "active", "agile"),
+  N("The criminal approached the crowd menacingly", "menacingly", "threateningly", "stealthily", "cunningly", "calculatedly"),
 
   // ===== 2024 · BEST COMPLETION (grammar) =====
   B("He said that they ______ painting the house by then", "would have finished", "will have finished", "will finish", "would finish"),
@@ -274,10 +276,10 @@
   P("dʒ", "gender", "regime", "gutter", "design"),
 
   // ===== 2023 · ANTONYMS =====
-  A("A trivial issue often becomes ______ when it is not properly handled", "serious", "valuable", "unbearable", "ordinary"),
-  A("The rockstar's stellar performance contrasted sharply with the ______ showing of the amateur group", "woeful", "routine", "mundane", "ordinary"),
-  A("The precarious terraces of the stadium have been transformed into a ______ walkway", "secure", "durable", "organizing", "executing"),
-  A("Do not always reprimand your children; it is good to ______ them at times", "compliment", "advise", "forgive", "pamper"),
+  A("A trivial issue often becomes ______ when it is not properly handled", "trivial", "serious", "valuable", "unbearable", "ordinary"),
+  A("The rockstar's stellar performance contrasted sharply with the ______ showing of the amateur group", "stellar", "woeful", "routine", "mundane", "ordinary"),
+  A("The precarious terraces of the stadium have been transformed into a ______ walkway", "precarious", "secure", "durable", "organizing", "executing"),
+  A("Do not always reprimand your children; it is good to ______ them at times", "reprimand", "compliment", "advise", "forgive", "pamper"),
 
   // ===== 2023 · BEST COMPLETION (lexis) =====
   B("From his ______ one can tell that he is an athlete", "physique", "stature", "gait", "anatomy"),
@@ -291,18 +293,18 @@
   B("The fisherman said he sighted a ______ of fish in the river", "shoal", "pack", "swarm", "colony"),
 
   // ===== 2023 · INTERPRETATION =====
-  I("Revealing that information will cut the ground from under my feet. This means it will", "ruin my plans", "expose my plans", "support my plans", "promote my plans"),
-  I("Mother always tells me to keep my nose clean. This means she tells me to", "stay out of trouble", "stay healthy", "do what pleases me", "keep my nose clean"),
-  I("One of the athletes was disqualified because she jumped the gun. This means she started", "too soon", "on time", "hurriedly", "without permission"),
-  I("Be careful of what you say; there are no flies on the boss. This means the boss is", "smart", "neat", "gullible", "strict"),
-  I("The students cocked their ears at the principal's speech. This means they listened with", "rapt attention", "little interest", "no understanding", "no interest"),
-  I("Your daughter will do very well in school. She has a good head on her shoulders. This means she", "is sensible", "is very beautiful", "thinks fast", "is well-behaved and diligent"),
-  I("The accountant has been under a cloud since the fraud scandal. This means the accountant is", "under suspicion", "worried", "unhappy", "under supervision"),
+  I("Revealing that information will cut the ground from under my feet. This means it will", "cut the ground from under my feet", "ruin my plans", "expose my plans", "support my plans", "promote my plans"),
+  I("Mother always tells me to keep my nose clean. This means she tells me to", "keep my nose clean", "stay out of trouble", "stay healthy", "do what pleases me", "keep my nose clean"),
+  I("One of the athletes was disqualified because she jumped the gun. This means she started", "jumped the gun", "too soon", "on time", "hurriedly", "without permission"),
+  I("Be careful of what you say; there are no flies on the boss. This means the boss is", "no flies on the boss", "smart", "neat", "gullible", "strict"),
+  I("The students cocked their ears at the principal's speech. This means they listened with", "cocked their ears", "rapt attention", "little interest", "no understanding", "no interest"),
+  I("Your daughter will do very well in school. She has a good head on her shoulders. This means she", "a good head on her shoulders", "is sensible", "is very beautiful", "thinks fast", "is well-behaved and diligent"),
+  I("The accountant has been under a cloud since the fraud scandal. This means the accountant is", "under a cloud", "under suspicion", "worried", "unhappy", "under supervision"),
 
   // ===== 2023 · NEAREST IN MEANING =====
-  N("The aggrieved faction held a clandestine meeting", "secret", "quiet", "brief", "quick"),
-  N("Morgan Pharmacy is the sole distributor of the antiviral drug", "only", "creditable", "first", "major"),
-  N("It was she that commanded me to leave the room", "ordered", "encouraged", "persuaded", "induced"),
+  N("The aggrieved faction held a clandestine meeting", "clandestine", "secret", "quiet", "brief", "quick"),
+  N("Morgan Pharmacy is the sole distributor of the antiviral drug", "sole", "only", "creditable", "first", "major"),
+  N("It was she that commanded me to leave the room", "commanded", "ordered", "encouraged", "persuaded", "induced"),
 
   // ===== 2023 · BEST COMPLETION (grammar) =====
   B("John should be through with his work, ______?", "shouldn't he", "isn't it", "can't he", "didn't he"),
@@ -351,12 +353,12 @@
   E("The principal punished the students for being DISHONEST", "Did the principal punish the students for being sincere?", "Did the principal punish the students for being dishonest?", "Did the principal praise the students for being dishonest?", "Did the principal punish the teachers for being dishonest?"),
 
   // ===== 2022 · ANTONYMS =====
-  A("Obi's family is known for their audacity, so one is surprised at his ______", "cowardice", "irritability", "moodiness", "insolence"),
-  A("These days, many people concentrate on temporal things to the detriment of ______ things", "spiritual", "tangible", "durable", "unchanging"),
-  A("The accused expected direct answers but the witness was ______", "evasive", "secretive", "illusive", "timid"),
-  A("Kofi is generous, whereas his wife is ______", "stingy", "sparing", "unkind", "harsh"),
-  A("His manners are uncouth, while his wife's are ______", "refined", "clever", "classic", "purified"),
-  A("The peak of Mount Everest is about six miles from its ______", "base", "depth", "source", "root"),
+  A("Obi's family is known for their audacity, so one is surprised at his ______", "audacity", "cowardice", "irritability", "moodiness", "insolence"),
+  A("These days, many people concentrate on temporal things to the detriment of ______ things", "temporal", "spiritual", "tangible", "durable", "unchanging"),
+  A("The accused expected direct answers but the witness was ______", "direct", "evasive", "secretive", "illusive", "timid"),
+  A("Kofi is generous, whereas his wife is ______", "generous", "stingy", "sparing", "unkind", "harsh"),
+  A("His manners are uncouth, while his wife's are ______", "uncouth", "refined", "clever", "classic", "purified"),
+  A("The peak of Mount Everest is about six miles from its ______", "peak", "base", "depth", "source", "root"),
 
   // ===== 2022 · BEST COMPLETION (lexis) =====
   B("The recent floods in some countries have ______ many lives", "claimed", "drowned", "buried", "injured"),
@@ -367,19 +369,19 @@
   B("The old man prayed for the ______ of his sins before he died", "remission", "recall", "permission", "omission"),
 
   // ===== 2022 · INTERPRETATION =====
-  I("The principal raised eyebrows at the student's explanation. This means the principal", "was surprised", "was unhappy", "rejected the explanation", "considered the explanation"),
-  I("Mary made a clean breast of everything. This means Mary", "told the whole truth", "won everyone's heart", "did everything efficiently", "changed her way of life"),
-  I("“Had it not rained, I would have visited you.” This means", "it rained so I did not visit you", "I visited you", "I did not visit you", "it did not rain"),
-  I("Franca's behaviour towards Edward leaves much to be desired. This means Franca's behaviour was", "unsatisfactory", "unexpected", "commendable", "unappreciated"),
-  I("The night watchman was given marching orders because of his negligence. This means he was", "dismissed", "promoted", "counselled", "suspended"),
-  I("My friend is as dull as ditchwater. This means my friend is", "extremely boring", "dark in complexion", "not intelligent", "not a troublemaker"),
-  I("The director sees Tim as the joker in the pack. This means Tim is", "unpredictable", "humorous", "nonchalant", "unimportant"),
+  I("The principal raised eyebrows at the student's explanation. This means the principal", "raised eyebrows", "was surprised", "was unhappy", "rejected the explanation", "considered the explanation"),
+  I("Mary made a clean breast of everything. This means Mary", "made a clean breast of everything", "told the whole truth", "won everyone's heart", "did everything efficiently", "changed her way of life"),
+  I("“Had it not rained, I would have visited you.” This means", null, "it rained so I did not visit you", "I visited you", "I did not visit you", "it did not rain"),
+  I("Franca's behaviour towards Edward leaves much to be desired. This means Franca's behaviour was", "leaves much to be desired", "unsatisfactory", "unexpected", "commendable", "unappreciated"),
+  I("The night watchman was given marching orders because of his negligence. This means he was", "marching orders", "dismissed", "promoted", "counselled", "suspended"),
+  I("My friend is as dull as ditchwater. This means my friend is", "dull as ditchwater", "extremely boring", "dark in complexion", "not intelligent", "not a troublemaker"),
+  I("The director sees Tim as the joker in the pack. This means Tim is", "the joker in the pack", "unpredictable", "humorous", "nonchalant", "unimportant"),
 
   // ===== 2022 · NEAREST IN MEANING =====
-  N("The president of the student union said it was strategic to boycott classes", "tactical", "acceptable", "ethical", "practical"),
-  N("Binetou looked quite resplendent in that red dress", "stunning", "respectable", "expensive", "conspicuous"),
-  N("He was jailed for failing to obey the court injunction", "order", "law", "fine", "proceedings"),
-  N("The World Bank made funds available for poverty alleviation", "reduction", "removal", "termination", "elimination"),
+  N("The president of the student union said it was strategic to boycott classes", "strategic", "tactical", "acceptable", "ethical", "practical"),
+  N("Binetou looked quite resplendent in that red dress", "resplendent", "stunning", "respectable", "expensive", "conspicuous"),
+  N("He was jailed for failing to obey the court injunction", "injunction", "order", "law", "fine", "proceedings"),
+  N("The World Bank made funds available for poverty alleviation", "alleviation", "reduction", "removal", "termination", "elimination"),
 
   // ===== 2022 · BEST COMPLETION (grammar) =====
   B("If I ______ what actually happened, I would have punished him", "had heard", "have had heard", "had had heard", "have heard"),
